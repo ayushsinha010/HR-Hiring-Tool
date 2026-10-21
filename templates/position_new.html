@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block title %}Add Position — HR Hiring Agent{% endblock %}
+{% block content %}
+<div class="form-screen">
+  <div class="form-card">
+    <div class="wizard-steps">
+      <span class="wizard-step active" data-step-label="1">1. Position</span>
+      <span class="wizard-step" data-step-label="2">2. Job Description</span>
+      <span class="wizard-step" data-step-label="3">3. Interview Rounds</span>
+      <span class="wizard-step" data-step-label="4">4. Resumes</span>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" id="new-position-form">
+      <div class="wizard-panel" data-step="1">
+        <h1>Name this position</h1>
+        <p class="form-subheading">What role are you hiring for?</p>
+        <label class="field-label" for="title">Position title</label>
+        <input type="text" id="title" name="title" placeholder="e.g. Senior Python Developer" required>
+
+        <div class="date-fields-row">
+          <div>
+            <label class="field-label" for="start_date">Start date</label>
+            <input type="date" id="start_date" name="start_date">
+          </div>
+          <div>
+            <label class="field-label" for="target_end_date">Targeted end date</label>
+            <input type="date" id="target_end_date" name="target_end_date">
+          </div>
+        </div>
+        <p id="date-calc-hint" class="field-hint-small"></p>
+
+        <button type="button" class="btn btn-primary btn-block" data-next>Next: Upload Job Description</button>
+      </div>
+
+      <div class="wizard-panel" data-step="2" hidden>
+        <h1>Job description</h1>
+        <p class="form-subheading">Upload a file, or have AI draft one from a few bullet points.</p>
+        <input type="hidden" id="jd_mode" name="jd_mode" value="upload">
+        <div class="radio-row">
+          <label><input type="radio" name="jd_mode_choice" value="upload" checked> Upload a file</label>
+          <label><input type="radio" name="jd_mode_choice" value="ai"> Draft with AI</label>
+        </div>
+
+        <div id="jd-upload-panel">
+          <label class="field-label" for="jd_file">Job description file</label>
+          <input type="file" id="jd_file" name="jd_file" accept=".docx,.pdf,.txt">
+        </div>
+
+        <div id="jd-ai-panel" hidden>
+          <label class="field-label" for="jd_bullets">A few bullet points about the role (optional but helps)</label>
+          <textarea id="jd_bullets" rows="4" placeholder="e.g. 5+ years Python, FastAPI, AWS, leads a small team, hybrid in Berlin"></textarea>
+          <button type="button" class="btn btn-secondary btn-small" id="jd-draft-btn" style="margin-top:8px;">Draft with AI</button>
+          <span id="jd-draft-status" class="field-hint-small"></span>
+          <label class="field-label" for="jd_text_draft">Drafted job description <span class="field-hint-small">(review and edit before continuing)</span></label>
+          <textarea id="jd_text_draft" name="jd_text_draft" rows="12" placeholder="Click &quot;Draft with AI&quot; above, or write the JD here yourself."></textarea>
+        </div>
+
+        <div class="wizard-actions">
+          <button type="button" class="btn btn-link" data-back>Back</button>
+          <button type="button" class="btn btn-primary" data-next>Next: Interview Rounds</button>
+        </div>
+      </div>
+
+      <div class="wizard-panel" data-step="3" hidden>
+        <h1>Interview rounds</h1>
+        <p class="form-subheading">
+          How many rounds does this position need, and what's each one called? Add or remove rounds freely —
+          they don't have to be L1/L2/L3. Who actually conducts each round gets picked later, from the position
+          page, once you've assigned a team to it.
+        </p>
+        <div id="rounds-list">
+          <div class="stakeholder-field-row round-row">
+            <input type="text" name="round_label" placeholder="e.g. Technical Screen" value="L1 Interview">
+            <button type="button" class="unlink-x round-remove" title="Remove round">&times;</button>
+          </div>
+          <div class="stakeholder-field-row round-row">
+            <input type="text" name="round_label" placeholder="e.g. Manager Round" value="L2 Interview">
+            <button type="button" class="unlink-x round-remove" title="Remove round">&times;</button>
+          </div>
+          <div class="stakeholder-field-row round-row">
+            <input type="text" name="round_label" placeholder="e.g. HR Round" value="L3 Interview">
+            <button type="button" class="unlink-x round-remove" title="Remove round">&times;</button>
+          </div>
+        </div>
+        <button type="button" class="btn btn-secondary btn-small" id="add-round-btn">+ Add Round</button>
+        <div class="wizard-actions">
+          <button type="button" class="btn btn-link" data-back>Back</button>
+          <button type="button" class="btn btn-primary" data-next>Next: Upload Resumes</button>
+        </div>
+      </div>
+
+      <div class="wizard-panel" data-step="4" hidden>
+        <h1>Upload resumes</h1>
+        <p class="form-subheading">Pick individual files, or pick the whole folder at once.</p>
+        <div class="resume-pickers">
+          <div class="resume-picker">
+            <input type="file" id="resume_files" name="resume_files" multiple accept=".docx,.pdf,.txt">
+            <span class="field-hint-small">Select files</span>
+          </div>
+          <div class="resume-picker">
+            <input type="file" id="resume_folder" webkitdirectory directory multiple>
+            <span class="field-hint-small">...or select a whole folder</span>
+          </div>
+        </div>
+        <div id="file-count" class="file-count"></div>
+        <div class="wizard-actions">
+          <button type="button" class="btn btn-link" data-back>Back</button>
+          <button type="submit" class="btn btn-primary" id="submit-btn">Create Position</button>
+        </div>
+      </div>
+    </form>
+    <a href="{{ url_for('home') }}" class="btn btn-link">Cancel</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const form = document.getElementById('new-position-form');
+  const panels = Array.from(form.querySelectorAll('.wizard-panel'));
+  const stepLabels = Array.from(document.querySelectorAll('.wizard-step'));
+  const titleInput = document.getElementById('title');
+  const jdInput = document.getElementById('jd_file');
+  const jdModeField = document.getElementById('jd_mode');
+  const jdUploadPanel = document.getElementById('jd-upload-panel');
+  const jdAiPanel = document.getElementById('jd-ai-panel');
+  const jdBullets = document.getElementById('jd_bullets');
+  const jdTextDraft = document.getElementById('jd_text_draft');
+  const jdDraftBtn = document.getElementById('jd-draft-btn');
+  const jdDraftStatus = document.getElementById('jd-draft-status');
+  const roundsList = document.getElementById('rounds-list');
+  const addRoundBtn = document.getElementById('add-round-btn');
+  function bindRemove(row) {
+    row.querySelector('.round-remove').addEventListener('click', () => {
+      if (roundsList.querySelectorAll('.round-row').length > 1) row.remove();
+    });
+  }
+  roundsList.querySelectorAll('.round-row').forEach(bindRemove);
+  addRoundBtn.addEventListener('click', () => {
+    const row = document.createElement('div');
+    row.className = 'stakeholder-field-row round-row';
+    row.innerHTML = '<input type="text" name="round_label" placeholder="e.g. Final Round"><button type="button" class="unlink-x round-remove" title="Remove round">&times;</button>';
+    roundsList.appendChild(row);
+    bindRemove(row);
+    row.querySelector('input').focus();
+  });
+
+  const filesInput = document.getElementById('resume_files');
+  const folderInput = document.getElementById('resume_folder');
+  const countDisplay = document.getElementById('file-count');
+  const submitBtn = document.getElementById('submit-btn');
+
+  function showStep(n) {
+    panels.forEach((p) => { p.hidden = Number(p.dataset.step) !== n; });
+    stepLabels.forEach((s, i) => { s.classList.toggle('active', i === n - 1); });
+  }
+
+  document.querySelectorAll('input[name="jd_mode_choice"]').forEach((el) => {
+    el.addEventListener('change', () => {
+      const mode = document.querySelector('input[name="jd_mode_choice"]:checked').value;
+      jdModeField.value = mode;
+      jdUploadPanel.hidden = mode !== 'upload';
+      jdAiPanel.hidden = mode !== 'ai';
+    });
+  });
+
+  if (jdDraftBtn) {
+    jdDraftBtn.addEventListener('click', () => {
+      if (!titleInput.value.trim()) {
+        jdDraftStatus.textContent = 'Enter a position title in step 1 first.';
+        return;
+      }
+      jdDraftBtn.disabled = true;
+      jdDraftStatus.textContent = 'Drafting...';
+      fetch('/ai/draft-jd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: titleInput.value.trim(), bullets: jdBullets.value.trim() }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          jdDraftBtn.disabled = false;
+          if (data.error) {
+            jdDraftStatus.textContent = data.error;
+            return;
+          }
+          jdTextDraft.value = data.jd_text;
+          jdDraftStatus.textContent = 'Drafted — review and edit before continuing.';
+        })
+        .catch(() => {
+          jdDraftBtn.disabled = false;
+          jdDraftStatus.textContent = 'Something went wrong drafting this.';
+        });
+    });
+  }
+
+  form.querySelectorAll('[data-next]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const panel = btn.closest('.wizard-panel');
+      const step = Number(panel.dataset.step);
+      if (step === 1 && !titleInput.value.trim()) {
+        titleInput.reportValidity();
+        return;
+      }
+      if (step === 2) {
+        const mode = jdModeField.value;
+        if (mode === 'upload' && !jdInput.files.length) {
+          jdInput.setCustomValidity('Please choose a job description file.');
+          jdInput.reportValidity();
+          return;
+        }
+        if (mode === 'ai' && !jdTextDraft.value.trim()) {
+          jdTextDraft.setCustomValidity('Draft (or write) a job description before continuing.');
+          jdTextDraft.reportValidity();
+          return;
+        }
+        jdTextDraft.setCustomValidity('');
+      }
+      jdInput.setCustomValidity('');
+      showStep(step + 1);
+    });
+  });
+
+  form.querySelectorAll('[data-back]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const step = Number(btn.closest('.wizard-panel').dataset.step);
+      showStep(step - 1);
+    });
+  });
+
+  const startDateInput = document.getElementById('start_date');
+  const targetEndDateInput = document.getElementById('target_end_date');
+  const dateCalcHint = document.getElementById('date-calc-hint');
+  function updateDateCalc() {
+    if (!startDateInput.value || !targetEndDateInput.value) {
+      dateCalcHint.textContent = '';
+      return;
+    }
+    const start = new Date(startDateInput.value + 'T00:00:00');
+    const end = new Date(targetEndDateInput.value + 'T00:00:00');
+    const days = Math.round((end - start) / 86400000);
+    dateCalcHint.textContent = days >= 0
+      ? `That's a ${days}-day target to fill this position.`
+      : "Targeted end date is before the start date - check the dates.";
+    dateCalcHint.style.color = days >= 0 ? '' : '#B51729';
+  }
+  startDateInput.addEventListener('change', updateDateCalc);
+  targetEndDateInput.addEventListener('change', updateDateCalc);
+
+  function updateCount() {
+    const n = (filesInput.files.length || 0) + (folderInput.files.length || 0);
+    countDisplay.textContent = n ? `${n} resume file(s) selected` : '';
+  }
+  filesInput.addEventListener('change', updateCount);
+  folderInput.addEventListener('change', updateCount);
+
+  form.addEventListener('submit', (e) => {
+    const totalResumes = (filesInput.files.length || 0) + (folderInput.files.length || 0);
+    if (!totalResumes) {
+      e.preventDefault();
+      alert('Please select at least one resume file or folder.');
+      return;
+    }
+    if (folderInput.files.length) {
+      const dt = new DataTransfer();
+      for (const f of filesInput.files) dt.items.add(f);
+      for (const f of folderInput.files) dt.items.add(f);
+      filesInput.files = dt.files;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating position...';
+  });
+</script>
+{% endblock %}

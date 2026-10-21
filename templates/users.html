@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Users — HR Hiring Agent{% endblock %}
+{% block content %}
+<div class="settings-page">
+  <a href="{{ url_for('settings') }}" class="back-link">&larr; Back to Settings</a>
+  <h1 class="dashboard-title">Users</h1>
+  <p class="dashboard-subtitle" style="margin-bottom:20px;">Create accounts for the rest of the hiring team. Who can see what is controlled per-position from a position's own page, not here.</p>
+
+  {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Add a User</h2>
+    <p class="form-subheading">A non-admin user only ever sees the position(s) they're later assigned to (from that position's page) &mdash; not the whole candidate database.</p>
+    <form method="post">
+      <label class="field-label" for="username">Username</label>
+      <input type="text" id="username" name="username" placeholder="e.g. jordan" required>
+
+      <label class="field-label" for="display_name">Display name</label>
+      <input type="text" id="display_name" name="display_name" placeholder="e.g. Jordan Blake">
+
+      <label class="field-label" for="password">Password</label>
+      <input type="password" id="password" name="password" placeholder="At least 6 characters" required>
+
+      <button type="submit" class="btn btn-primary">Create User</button>
+    </form>
+  </div>
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>All Users</h2>
+    <table class="tracker-table" style="margin-top:6px;">
+      <thead>
+        <tr><th>Username</th><th>Display name</th><th>Role</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.username }}</td>
+          <td>{{ u.display_name or '' }}</td>
+          <td>{% if u.is_admin %}<span class="chip chip-grey">Admin</span>{% else %}<span class="field-hint-small">Assigned per-position</span>{% endif %}</td>
+          <td>
+            {% if u.id != current_user.id %}
+            <form method="post" action="{{ url_for('delete_user_route', user_id=u.id) }}" style="display:inline"
+                  onsubmit="return confirm('Delete the user {{ u.username }}? Their position assignments will be removed. Notes/ratings/audit history they created are kept.');">
+              <button type="submit" class="btn btn-danger btn-small">Delete</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

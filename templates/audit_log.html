@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — HR Hiring Agent{% endblock %}
+{% block content %}
+<div class="settings-page" style="max-width:900px;">
+  <a href="{{ url_for('home') }}" class="back-link">&larr; Back to Dashboard</a>
+  <h1 class="dashboard-title">Audit Log</h1>
+  <p class="dashboard-subtitle" style="margin-bottom:16px;">A chronological record of who changed what across every position &mdash; stage/status changes, notes, ratings, assignments, and offer actions.</p>
+
+  <form method="get" class="audit-filter-bar">
+    <select name="user_id" onchange="this.form.submit()">
+      <option value="">All Users</option>
+      {% for u in all_users %}
+      <option value="{{ u.id }}" {{ 'selected' if filter_user_id == u.id else '' }}>{{ u.display_name or u.username }}</option>
+      {% endfor %}
+    </select>
+    <select name="action" onchange="this.form.submit()">
+      <option value="">All Activities</option>
+      {% for a in all_actions %}
+      <option value="{{ a }}" {{ 'selected' if filter_action == a else '' }}>{{ action_labels.get(a, a.replace('_', ' ').title()) }}</option>
+      {% endfor %}
+    </select>
+    <input type="date" name="date_from" value="{{ filter_date_from }}" title="From date" onchange="this.form.submit()">
+    <input type="date" name="date_to" value="{{ filter_date_to }}" title="To date" onchange="this.form.submit()">
+    {% if filter_user_id or filter_action or filter_date_from or filter_date_to %}
+    <a href="{{ url_for('audit_log_view') }}" class="btn btn-secondary btn-small">Clear filters</a>
+    {% endif %}
+  </form>
+
+  {% if not days %}
+  <div class="empty-state"><p>No activity matches these filters.</p></div>
+  {% endif %}
+
+  {% for day in days %}
+  <div class="audit-day-group">
+    <h3 class="audit-day-heading">{{ day.label }}</h3>
+    <div class="audit-entries">
+      {% for log in day.logs %}
+      <div class="audit-entry">
+        <span class="audit-entry-time">{{ log.time_display }}</span>
+        <span class="audit-entry-text">
+          <strong>{{ log.action_label }}</strong> &mdash; {{ log.detail }}, by <strong>{{ log.actor_label or 'the system' }}</strong>
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

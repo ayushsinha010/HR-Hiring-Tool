@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Screening Assessment — {{ position.title }}{% endblock %}
+{% block content %}
+<div class="col-right">
+  <a href="{{ url_for('home', position=position.id) }}" class="back-link">&larr; {{ position.title }}</a>
+  <h1 class="dashboard-title">Screening Assessment</h1>
+  <p class="form-subheading">Generate skill-testing questions from this position's JD, then record and score each candidate's written answers.</p>
+
+  <div class="chart-card" style="max-width:780px;">
+    <h3>Questions{{ ' (' ~ questions|length ~ ')' if questions else '' }}</h3>
+    {% if not questions %}
+    <p class="field-hint-small">No questions yet for this position — generate a draft below.</p>
+    {% else %}
+    <p class="field-hint-small">Regenerating replaces these questions and clears any saved answers/scores for this position.</p>
+    {% endif %}
+    <div class="radio-row" style="align-items:center;">
+      <label class="field-label" for="q-count" style="margin:0;">How many questions?</label>
+      <input type="number" id="q-count" min="1" max="10" value="5" style="width:70px;">
+      <button type="button" class="btn btn-secondary btn-small" id="generate-btn">{{ 'Regenerate with AI' if questions else 'Generate with AI' }}</button>
+    </div>
+    <p id="generate-status" class="field-hint-small"></p>
+
+    <form method="post" action="{{ url_for('assessment_save', position_id=position.id) }}" id="questions-form">
+      <div id="questions-list">
+        {% for q in questions %}
+        <label class="field-label">Question {{ loop.index }}</label>
+        <textarea name="question_text" rows="2">{{ q.question_text }}</textarea>
+        {% endfor %}
+      </div>
+      <p class="field-hint-small" id="review-hint" {{ '' if questions else 'hidden' }}>Review/edit the questions above, then save — they aren't used for real until you do.</p>
+      <button type="submit" class="btn btn-primary" id="save-questions-btn" {{ 'disabled' if not questions else '' }}>Save Questions</button>
+    </form>
+  </div>
+
+  <div class="chart-card" style="max-width:780px; margin-top:20px;">
+    <h3>Candidates</h3>
+    {% if not candidates %}
+    <p class="field-hint-small">No candidates on this position yet.</p>
+    {% elif not questions %}
+    <p class="field-hint-small">Save a question set above before recording candidate answers.</p>
+    {% else %}
+    <div class="candidate-notes-list">
+      {% for c in candidates %}
+      <div class="candidate-note-row" style="display:flex; align-items:center; justify-content:space-between;">
+        <span>{{ c.candidate_name or c.resume_filename }}</span>
+        <a href="{{ url_for('candidate_assessment', candidate_id=c.id) }}" class="btn btn-secondary btn-small">Record / Score Answers</a>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const generateBtn = document.getElementById('generate-btn');
+  const generateStatus = document.getElementById('generate-status');
+  const qCount = document.getElementById('q-count');
+  const questionsList = document.getElementById('questions-list');
+  const saveBtn = document.getElementById('save-questions-btn');
+  const reviewHint = document.getElementById('review-hint');
+
+  generateBtn.addEventListener('click', () => {
+    generateBtn.disabled = true;
+    generateStatus.textContent = 'Generating...';
+    fetch('{{ url_for("assessment_generate", position_id=position.id) }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ n: Number(qCount.value) || 5 }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        generateBtn.disabled = false;
+        if (data.error) { generateStatus.textContent = data.error; return; }
+        questionsList.innerHTML = '';
+        data.questions.forEach((q, i) => {
+          const label = document.createElement('label');
+          label.className = 'field-label';
+          label.textContent = `Question ${i + 1}`;
+          const textarea = document.createElement('textarea');
+          textarea.name = 'question_text';
+          textarea.rows = 2;
+          textarea.value = q;
+          questionsList.appendChild(label);
+          questionsList.appendChild(textarea);
+        });
+        saveBtn.disabled = false;
+        reviewHint.hidden = false;
+        generateStatus.textContent = 'Drafted — review/edit above, then click Save Questions.';
+      })
+      .catch(() => { generateBtn.disabled = false; generateStatus.textContent = 'Something went wrong generating these.'; });
+  });
+</script>
+{% endblock %}

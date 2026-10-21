@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Sign in — HR Hiring Agent{% endblock %}
+{% block content %}
+<div class="login-screen">
+  <div class="login-card">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="HR Hiring Agent" class="login-logo">
+    <h1 class="login-heading">HR Hiring Agent</h1>
+    <p class="login-subheading">Sign in to continue</p>
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+    <form method="post" class="login-form">
+      <label class="field-label" for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+      <label class="field-label" for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

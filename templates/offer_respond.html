@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Your Offer Letter{% endblock %}
+{% block content %}
+<div class="public-offer-screen">
+  <div class="public-offer-card">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="HR Hiring Agent" class="public-offer-logo">
+    {% if not candidate %}
+    <h1>Link not found</h1>
+    <p>This link is invalid, or the offer has since been withdrawn.</p>
+    {% else %}
+    <h1>Your Offer Letter</h1>
+    <p class="public-offer-subhead">
+      Dear {{ candidate.candidate_name or candidate.resume_filename }}, here is your offer for the {{ position.title }} role.
+    </p>
+
+    {% if candidate.offer_pdf_path %}
+    <iframe class="offer-pdf-frame" src="{{ url_for('offer_respond_pdf', token=candidate.offer_candidate_token) }}"></iframe>
+    {% endif %}
+
+    {% if not handled %}
+    <form method="post" class="public-offer-actions">
+      <button type="submit" name="action" value="accept" class="btn btn-primary">Accept Offer</button>
+      <button type="submit" name="action" value="decline" class="btn btn-danger">Decline Offer</button>
+    </form>
+    {% else %}
+    <div class="alert alert-{{ 'success' if candidate.offer_status == 'accepted' else 'error' }}">
+      {% if candidate.offer_status == 'accepted' %}
+      You accepted this offer on {{ candidate.offer_responded_at }}. Welcome aboard — HR will be in touch shortly.
+      {% elif candidate.offer_status == 'declined' %}
+      You declined this offer on {{ candidate.offer_responded_at }}.
+      {% else %}
+      Status: {{ offer_status_labels.get(candidate.offer_status, candidate.offer_status) }}
+      {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,751 @@
+{% extends "base.html" %}
+{% block title %}Hiring Pipeline — HR Hiring Agent{% endblock %}
+{% block content %}
+<div class="two-col">
+  <aside class="col-left">
+    <div class="col-header">
+      <h2>Hiring Pipeline</h2>
+    </div>
+    <div class="pipeline-list">
+      {% for p in positions %}
+      <a href="{{ url_for('home', position=p.id) }}"
+         class="pipeline-card pipeline-status-{{ p.hiring_status }} {{ 'active' if selected and selected.id == p.id else '' }}">
+        <div class="pipeline-card-title">{{ p.title }}</div>
+        <div class="pipeline-card-meta">{{ p.total }} candidate{{ '' if p.total == 1 else 's' }} &middot; {{ p.days_open }}d open</div>
+        {% if p.deadline %}
+        <div class="deadline-chip deadline-chip-{{ p.deadline.level }}">{{ p.deadline.message }}</div>
+        {% endif %}
+        <div class="bucket-chips">
+          <span class="chip chip-green" title="Strong fit (score above 6)">{{ p.bucket_counts.green }}</span>
+          <span class="chip chip-yellow" title="Borderline fit (score 4-6)">{{ p.bucket_counts.yellow }}</span>
+          <span class="chip chip-red" title="Weak fit (score below 4)">{{ p.bucket_counts.red }}</span>
+          <span class="chip chip-grey" title="Not yet scored">{{ p.bucket_counts.unscored }}</span>
+        </div>
+      </a>
+      {% endfor %}
+      <a href="{{ url_for('new_position') }}" class="pipeline-card pipeline-card-add">
+        + Add Position
+      </a>
+    </div>
+  </aside>
+
+  <section class="col-right">
+    {% if selected %}
+    <div class="jd-panel">
+      <a href="{{ url_for('home') }}" class="back-link">&larr; Back to Dashboard</a>
+      <div class="jd-panel-header">
+        <h1>{{ selected.title }}</h1>
+        <div class="jd-actions">
+          <div class="jd-actions-group">
+            <a href="{{ url_for('resumes', position_id=selected.id) }}" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
+              Resumes
+            </a>
+            <a href="{{ url_for('tracker', position_id=selected.id) }}" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>
+              View Tracker
+            </a>
+            <a href="{{ url_for('assessment_page', position_id=selected.id) }}" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/><path d="m9 14 2 2 4-4"/></svg>
+              Screening Assessment
+            </a>
+            <a href="{{ url_for('position_report_pdf', position_id=selected.id) }}" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M20 21H4"/></svg>
+              Generate Report
+            </a>
+          </div>
+          <div class="jd-actions-danger">
+            <form method="post" action="{{ url_for('delete_position_route', position_id=selected.id) }}"
+                  onsubmit="return confirm('Delete this position, its JD, and all {{ selected_funnel.total }} resume(s)? This cannot be undone.');">
+              <button type="submit" class="btn btn-danger">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                Delete Position
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="position-card position-snapshot">
+        <div class="position-card-header">
+          <span class="status-badge status-{{ selected_funnel.status }}">{{ status_labels[selected_funnel.status] }}</span>
+          <span class="position-card-kpi-value">{{ selected_funnel.selection_rate }}%<span class="position-card-kpi-label"> Selection Rate</span></span>
+          <span class="position-card-kpi-value">
+            {% if selected_funnel.days_to_fill is not none %}{{ selected_funnel.days_to_fill }}d<span class="position-card-kpi-label"> to Fill</span>
+            {% else %}{{ selected_funnel.days_open }}d<span class="position-card-kpi-label"> Open</span>{% endif %}
+          </span>
+          <form method="post" action="{{ url_for('set_position_status', position_id=selected.id) }}" class="status-override-form">
+            <label class="field-label status-override-label" for="status-select">Mark hiring status</label>
+            <select id="status-select" name="status" onchange="this.form.submit()">
+              <option value="" {{ 'selected' if not selected_funnel.is_manual_status else '' }}>Auto ({{ status_labels[selected_funnel.auto_status] }})</option>
+              {% for s in statuses %}
+              <option value="{{ s }}" {{ 'selected' if selected_funnel.is_manual_status and selected_funnel.status == s else '' }}>Mark as {{ status_labels[s] }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </div>
+        <canvas class="position-card-chart" id="pos-detail-chart" height="90"></canvas>
+      </div>
+      {% if selected_funnel.deadline %}
+      <div class="deadline-banner deadline-banner-{{ selected_funnel.deadline.level }}">{{ selected_funnel.deadline.message }}</div>
+      {% endif %}
+
+      {# Hiring Timeline and Buffer Time, scoped to THIS position (same partial and data builder as the overall dashboard) #}
+      {% if timeline_data %}{% set timeline_scope = 'position' %}{% include "_timeline_section.html" %}{% endif %}
+
+      <div class="stakeholders-card">
+        <h3>Assigned Team</h3>
+        <p class="form-subheading">Who can see this position and submit ratings/remarks on its candidates &mdash; reassignable/removable any time.</p>
+        {% if assignment_saved %}<div class="alert alert-success">Assignment saved.</div>{% endif %}
+        {% if assignments %}
+        <div class="stakeholders-summary">
+          {% for a in assignments %}
+          <div class="stakeholder-summary-row">
+            <span class="stakeholder-summary-level">{{ a.role_label or 'Assigned' }}</span>
+            <span class="stakeholder-summary-name">{{ a.assigned_display_name or a.assigned_username }}</span>
+            {% if is_admin %}
+            <form method="post" action="{{ url_for('unassign_position', position_id=selected.id, assignment_id=a.id) }}" style="display:inline">
+              <button type="submit" class="unlink-x" title="Remove this assignment">&times;</button>
+            </form>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% elif not is_admin %}
+        <p class="field-hint-small">No one is assigned to this position yet.</p>
+        {% endif %}
+        {% if is_admin %}
+        <form method="post" action="{{ url_for('assign_position', position_id=selected.id) }}" class="stakeholder-field-row">
+          <div class="stakeholder-field-inputs">
+            <select name="assigned_user_id" required>
+              <option value="">Choose a user...</option>
+              {% for u in assignable_users %}
+              <option value="{{ u.id }}">{{ u.display_name or u.username }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="role_label" placeholder="Role, e.g. Technical Interviewer">
+          </div>
+          <button type="submit" class="btn btn-secondary btn-small" style="margin-top:8px;">Assign</button>
+        </form>
+        {% endif %}
+      </div>
+
+      <div class="chatbot-card">
+        <h3>Interview Question Recommendations</h3>
+        <p class="form-subheading">AI-suggested interview and assessment questions to pick from &mdash; not a scored assessment, nothing is sent anywhere.</p>
+        {% if reco_error %}<div class="alert alert-error">{{ reco_error }}</div>{% endif %}
+        <form method="post" action="{{ url_for('position_interview_questions_generate', position_id=selected.id) }}">
+          <button type="submit" class="btn btn-secondary btn-small">Generate Recommendations</button>
+        </form>
+        {% if interview_recos %}
+        <div class="candidate-notes-list" style="margin-top:10px;">
+          {% for reco in interview_recos %}
+          <div class="candidate-note-row">
+            <span class="field-hint-small">Generated {{ reco.created_at }} by {{ reco.display_name or reco.username or 'unknown' }}</span>
+            <p style="margin:6px 0 2px;"><strong>Interview questions</strong></p>
+            <ul style="margin:0 0 8px 18px; padding:0;">
+              {% for q in reco.questions if q.category == 'interview' %}<li>{{ q.text }}</li>{% endfor %}
+            </ul>
+            <p style="margin:0 0 2px;"><strong>Assessment questions</strong></p>
+            <ul style="margin:0 0 0 18px; padding:0;">
+              {% for q in reco.questions if q.category == 'assessment' %}<li>{{ q.text }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      {% if selected.uses_dynamic_rounds %}
+      <div class="stakeholders-card">
+        <h3>Interview Rounds</h3>
+        <p class="form-subheading">This position's own rounds &mdash; assign who conducts each one from the Assigned Team above. They'll get notified the moment you assign them.</p>
+        {% if not interview_rounds %}
+        <p class="field-hint-small">No interview rounds were set up for this position.</p>
+        {% else %}
+        <div class="stakeholders-summary">
+          {% for round in interview_rounds %}
+          <form method="post" action="{{ url_for('assign_round_interviewer_route', position_id=selected.id, round_id=round.id) }}" class="stakeholder-summary-row" style="grid-template-columns: 140px 1fr auto;">
+            <span class="stakeholder-summary-level">{{ round.round_label }}</span>
+            {% if assignments %}
+            <select name="user_id">
+              <option value="">Unassigned</option>
+              {% for a in assignments %}
+              <option value="{{ a.assigned_user_id }}" {{ 'selected' if a.assigned_user_id == round.assigned_user_id else '' }}>{{ a.assigned_display_name or a.assigned_username }}{% if a.role_label %} ({{ a.role_label }}){% endif %}</option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <span class="field-hint-small">Assign this position's team first (above) before picking an interviewer.</span>
+            {% endif %}
+            <button type="submit" class="btn btn-secondary btn-small">Save</button>
+          </form>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="stakeholders-card">
+        <h3>Interview Stakeholders</h3>
+        <p class="form-subheading">Who actually runs each round &mdash; not fixed to a role. Sending an interview link also notifies whoever is set here.</p>
+        {% if stakeholders_saved %}
+        <div class="alert alert-success">Stakeholders saved.</div>
+        {% endif %}
+        {% if stakeholders %}
+        <div class="stakeholders-summary">
+          {% for level, level_label in (('l1', 'L1 Interview'), ('l2', 'L2 Interview'), ('l3', 'L3 Interview')) %}
+          {% if level in stakeholders %}
+          <div class="stakeholder-summary-row">
+            <span class="stakeholder-summary-level">{{ level_label }}</span>
+            <span class="stakeholder-summary-name">{{ stakeholders[level].name }}</span>
+            <span class="stakeholder-summary-email">{{ stakeholders[level].email }}</span>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+        <form method="post" action="{{ url_for('update_stakeholders', position_id=selected.id) }}">
+          {% for level, level_label in (('l1', 'L1 Interview'), ('l2', 'L2 Interview'), ('l3', 'L3 Interview')) %}
+          <div class="stakeholder-field-row">
+            <label class="field-label">{{ level_label }}</label>
+            <div class="stakeholder-field-inputs">
+              {% if assignments %}
+              <select class="stakeholder-pick-assigned" data-name-target="stakeholder_{{ level }}_name" data-email-target="stakeholder_{{ level }}_email">
+                <option value="">From Assigned Team...</option>
+                {% for a in assignments %}
+                <option value="{{ a.id }}" data-name="{{ a.assigned_display_name or a.assigned_username }}" data-email="{{ a.assigned_email or '' }}">{{ a.assigned_display_name or a.assigned_username }}{% if a.role_label %} ({{ a.role_label }}){% endif %}</option>
+                {% endfor %}
+              </select>
+              {% endif %}
+              <input type="text" name="stakeholder_{{ level }}_name" id="stakeholder_{{ level }}_name" placeholder="Interviewer name" value="{{ stakeholders[level].name if level in stakeholders else '' }}">
+              <input type="email" name="stakeholder_{{ level }}_email" id="stakeholder_{{ level }}_email" placeholder="Interviewer email" value="{{ stakeholders[level].email if level in stakeholders else '' }}">
+            </div>
+          </div>
+          {% endfor %}
+          <button type="submit" class="btn btn-secondary btn-small">Save Stakeholders</button>
+        </form>
+      </div>
+      {% endif %}
+
+      <div class="chatbot-card">
+        <h3>Ask about this role</h3>
+        <p class="form-subheading">Answers using only this position's JD and its candidates' names/scores/summaries already in the app &mdash; not an external search.</p>
+        <div id="chatbot-messages" class="chatbot-messages">
+          <div class="chatbot-msg chatbot-msg-assistant">Ask me things like "who are the top 3 candidates?" or "does the JD ask for AWS experience?"</div>
+        </div>
+        <form id="chatbot-form" class="chatbot-form">
+          <input type="text" id="chatbot-input" placeholder="Ask a question about this role or its candidates..." autocomplete="off">
+          <button type="submit" class="btn btn-primary btn-small">Ask</button>
+        </form>
+      </div>
+
+      <div class="jd-body">{{ selected.jd_text }}</div>
+    </div>
+    {% else %}
+    <div class="dashboard" id="dashboard-root">
+      <div class="dashboard-title-row">
+        <div>
+          <h1 class="dashboard-title">Welcome back, {{ current_user.display_name or current_user.username }}</h1>
+          <p class="dashboard-subtitle">Here's how hiring is tracking across every open position.</p>
+        </div>
+        {% if overall and overall.total > 0 %}
+        <div class="jd-actions">
+          <div class="jd-actions-group">
+            <button type="button" id="calendar-btn" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              Calendar
+            </button>
+            <a href="{{ url_for('overall_report_pdf') }}" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M20 21H4"/></svg>
+              Generate Overall Report
+            </a>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% if overall.total == 0 %}
+      <div class="empty-state">
+        <p>No candidates yet. Add a position and upload resumes to see hiring KPIs and funnel charts here.</p>
+        <a href="{{ url_for('new_position') }}" class="btn btn-primary">+ Add Position</a>
+      </div>
+      {% if timeline_data and timeline_data.positions %}{% include "_timeline_section.html" %}{% endif %}
+      {% else %}
+      <div class="overview-row">
+        <div class="kpi-grid kpi-grid-2x2 overview-kpis">
+          <div class="kpi-card kpi-neutral">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+            <div class="kpi-value" data-count="total_positions">{{ counts.total_positions }}</div><div class="kpi-label">Total Positions</div>
+          </div>
+          <div class="kpi-card kpi-green">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+            <div class="kpi-value" data-count="active">{{ counts.active }}</div><div class="kpi-label">Active Hiring</div>
+          </div>
+          <div class="kpi-card kpi-grey-card">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-7"/><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M10 13h4"/></svg></span>
+            <div class="kpi-value" data-count="closed">{{ counts.closed }}</div><div class="kpi-label">Closed Hiring</div>
+          </div>
+          <div class="kpi-card kpi-yellow">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></span>
+            <div class="kpi-value" data-count="upcoming">{{ counts.upcoming }}</div><div class="kpi-label">Upcoming Hiring</div>
+          </div>
+        </div>
+        <div class="chart-card status-donut-card">
+          <h3>Positions by Status</h3>
+          <canvas id="status-donut" height="140"></canvas>
+        </div>
+      </div>
+
+      <div class="kpi-grid kpi-grid-compact">
+        <div class="kpi-card kpi-neutral">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          <div class="kpi-value" data-overall="total">{{ overall.total }}</div><div class="kpi-label">Candidates in Funnel</div>
+        </div>
+        <div class="kpi-card kpi-green">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <div class="kpi-value" data-overall="joined">{{ overall.joined }}</div><div class="kpi-label">Joined</div>
+        </div>
+        <div class="kpi-card kpi-highlight">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>
+          <div class="kpi-value" data-overall="selection_rate">{{ overall.selection_rate }}%</div><div class="kpi-label">Overall Selection Rate</div>
+        </div>
+        {% if avg_days_to_hire is not none %}
+        <div class="kpi-card kpi-purple">
+          <span class="kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></span>
+          <div class="kpi-value">{{ avg_days_to_hire }}d</div><div class="kpi-label">Avg Days to Hire</div>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if activity_heatmap %}
+      <div class="chart-card activity-heatmap-card">
+        <h3>Activity Heatmap <span class="field-hint-small">({{ activity_heatmap.total }} action{{ '' if activity_heatmap.total == 1 else 's' }} in the last year)</span></h3>
+        <div class="heatmap-body">
+          <div class="heatmap-day-labels">
+            <span class="heatmap-day-labels-spacer"></span>
+            <span class="heatmap-day-label">Mon</span>
+            <span></span>
+            <span class="heatmap-day-label">Wed</span>
+            <span></span>
+            <span class="heatmap-day-label">Fri</span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="heatmap-scroll">
+            <div class="heatmap-months" style="grid-template-columns: repeat({{ activity_heatmap.weeks|length }}, 12px); column-gap: 3px;">
+              {% for m in activity_heatmap.month_labels %}
+              <span class="heatmap-month-label" style="grid-column: {{ m.week + 1 }};">{{ m.label }}</span>
+              {% endfor %}
+            </div>
+            <div class="heatmap-grid" style="grid-template-columns: repeat({{ activity_heatmap.weeks|length }}, 12px); grid-template-rows: repeat(7, 12px);">
+              {% for week in activity_heatmap.weeks %}
+                {% for day in week %}
+                <div class="heatmap-day heatmap-level-{{ day.level }}" title="{{ day.date }}: {{ day.count }} action{{ '' if day.count == 1 else 's' }}"></div>
+                {% endfor %}
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="heatmap-legend">
+          <span class="field-hint-small">Less</span>
+          <span class="heatmap-day heatmap-level-0"></span>
+          <span class="heatmap-day heatmap-level-1"></span>
+          <span class="heatmap-day heatmap-level-2"></span>
+          <span class="heatmap-day heatmap-level-3"></span>
+          <span class="heatmap-day heatmap-level-4"></span>
+          <span class="field-hint-small">More</span>
+        </div>
+      </div>
+      {% endif %}
+
+      {% set filled_rows = funnel_rows | selectattr('days_to_fill', 'ne', none) | list %}
+      {% set open_rows = funnel_rows | selectattr('days_to_fill', 'eq', none) | list %}
+      {% if filled_rows or open_rows %}
+      <div class="overview-row timing-charts-row">
+        {% if filled_rows %}
+        <div class="chart-card">
+          <h3>Time to Fill <span class="field-hint-small">(days from opening to filled)</span></h3>
+          <canvas id="time-to-fill-chart" height="140"></canvas>
+        </div>
+        {% endif %}
+        {% if open_rows %}
+        <div class="chart-card">
+          <h3>Age of Open Positions <span class="field-hint-small">(days still open)</span></h3>
+          <canvas id="age-of-job-chart" height="140"></canvas>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if days_to_hire_by_position or (offer_acceptance and offer_acceptance.rate is not none) %}
+      <div class="overview-row timing-charts-row">
+        {% if days_to_hire_by_position %}
+        <div class="chart-card">
+          <h3>Time to Hire by Role <span class="field-hint-small">(avg. days sourced &rarr; joined)</span></h3>
+          <canvas id="time-to-hire-chart" height="140"></canvas>
+        </div>
+        {% endif %}
+        {% if offer_acceptance and offer_acceptance.rate is not none %}
+        <div class="chart-card status-donut-card">
+          <h3>Offer Acceptance Rate <span class="field-hint-small">({{ offer_acceptance.accepted }} accepted, {{ offer_acceptance.declined }} declined)</span></h3>
+          <canvas id="offer-acceptance-chart" height="140"></canvas>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="position-cards-grid" id="position-cards-grid">
+        {% for row in funnel_rows %}
+        <div class="position-card" data-position-id="{{ row.position_id }}">
+          <div class="position-card-header">
+            <a href="{{ url_for('home', position=row.position_id) }}" class="position-card-title">{{ row.title }}</a>
+            <span class="status-badge status-{{ row.status }}" data-field="status">{{ status_labels[row.status] }}</span>
+            {% if row.is_manual_status %}<span class="manual-status-flag" title="Manually set">manual</span>{% endif %}
+          </div>
+          <div class="position-card-kpi">
+            <span class="position-card-kpi-value" data-field="selection_rate">{{ row.selection_rate }}%</span>
+            <span class="position-card-kpi-label">Selection Rate</span>
+            <span class="position-card-days" data-field="days">
+              {% if row.days_to_fill is not none %}{{ row.days_to_fill }}d to fill{% else %}{{ row.days_open }}d open{% endif %}
+            </span>
+          </div>
+          {% if row.deadline %}
+          <div class="deadline-chip deadline-chip-{{ row.deadline.level }}">{{ row.deadline.message }}</div>
+          {% endif %}
+          <canvas class="position-card-chart" id="pos-chart-{{ row.position_id }}" height="130"></canvas>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="table-scroll-shell">
+      <div class="tracker-table-wrap dashboard-table-wrap">
+        <table class="tracker-table" id="funnel-table">
+          <thead>
+            <tr>
+              <th class="sticky-col" rowspan="2">Position</th>
+              <th rowspan="2">Days</th>
+              <th rowspan="2" data-total-field="total">In Funnel</th>
+              {% for group, items in stage_groups %}
+              <th colspan="{{ items|length }}">{{ group }}</th>
+              {% endfor %}
+              {% for field, label in status_fields %}
+              <th rowspan="2">{{ label }}</th>
+              {% endfor %}
+            </tr>
+            <tr>
+              {% for group, items in stage_groups %}
+                {% for field, label, g in items %}
+                <th class="sub-th">{{ label }}</th>
+                {% endfor %}
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in funnel_rows %}
+            <tr data-position-id="{{ row.position_id }}">
+              <td class="sticky-col">{{ row.title }}</td>
+              <td>{% if row.days_to_fill is not none %}{{ row.days_to_fill }}d (filled){% else %}{{ row.days_open }}d{% endif %}</td>
+              <td data-field="total">{{ row.total }}</td>
+              {% for group, items in stage_groups %}
+                {% for field, label, g in items %}
+                <td data-field="{{ field }}">{{ row[field] }}</td>
+                {% endfor %}
+              {% endfor %}
+              {% for field, label in status_fields %}
+              <td data-field="{{ field }}">{{ row[field] }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+            <tr class="total-row" data-position-id="total">
+              <td class="sticky-col">TOTAL - all positions</td>
+              <td>&mdash;</td>
+              <td data-field="total">{{ overall.total }}</td>
+              {% for group, items in stage_groups %}
+                {% for field, label, g in items %}
+                <td data-field="{{ field }}">{{ overall[field] }}</td>
+                {% endfor %}
+              {% endfor %}
+              {% for field, label in status_fields %}
+              <td data-field="{{ field }}">{{ overall[field] }}</td>
+              {% endfor %}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="scroll-fade-right" aria-hidden="true"></div>
+      </div>
+
+      {# LAST section of the overall dashboard - also the last section of the Generate Report PDF #}
+      {% include "_timeline_section.html" %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+<div id="calendar-modal" class="modal-overlay" hidden>
+  <div class="modal-card calendar-modal-card">
+    <button id="calendar-close" class="modal-close">&times;</button>
+    <h2>Calendar</h2>
+    <div class="calendar-nav">
+      <button type="button" class="calendar-prev btn btn-secondary btn-small">&lsaquo;</button>
+      <span class="calendar-month-title"></span>
+      <button type="button" class="calendar-next btn btn-secondary btn-small">&rsaquo;</button>
+    </div>
+    <div class="calendar-grid"></div>
+    <div class="calendar-day-summary"><p>Click a date to see that day's activity.</p></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if overall and overall.total > 0 %}
+<script src="{{ url_for('static', filename='calendar.js') }}"></script>
+<script src="{{ url_for('static', filename='table-scroll.js') }}"></script>
+{% endif %}
+{% if selected %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="{{ url_for('static', filename='timeline.js') }}"></script>
+<script>
+  const FUNNEL_STEPS = ["total", "reached", "l1_cleared", "l2_cleared", "l3_cleared", "offer_made", "joined"];
+  const FUNNEL_LABELS = ["Sourced", "Reached", "L1", "L2", "L3", "Offered", "Joined"];
+  const selectedRow = {{ selected_funnel | tojson }};
+  new Chart(document.getElementById('pos-detail-chart'), {
+    type: 'bar',
+    data: {
+      labels: FUNNEL_LABELS,
+      datasets: [{ data: FUNNEL_STEPS.map((k) => selectedRow[k]), backgroundColor: '#662984', borderRadius: 4 }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } }, x: { ticks: { font: { size: 9 } } } },
+    },
+  });
+
+  (function () {
+    const positionId = {{ selected.id }};
+    const messages = document.getElementById('chatbot-messages');
+    const form = document.getElementById('chatbot-form');
+    const input = document.getElementById('chatbot-input');
+    let history = [];
+
+    function addMessage(role, text) {
+      const div = document.createElement('div');
+      div.className = `chatbot-msg chatbot-msg-${role}`;
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+      return div;
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const question = input.value.trim();
+      if (!question) return;
+      addMessage('user', question);
+      input.value = '';
+      input.disabled = true;
+      const thinking = addMessage('assistant', 'Thinking...');
+      fetch(`/positions/${positionId}/chatbot/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, history }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          input.disabled = false;
+          input.focus();
+          if (data.error) {
+            thinking.textContent = data.error;
+            thinking.classList.add('chatbot-msg-error');
+            return;
+          }
+          thinking.textContent = data.answer;
+          history.push({ role: 'user', content: question });
+          history.push({ role: 'assistant', content: data.answer });
+        })
+        .catch(() => {
+          input.disabled = false;
+          thinking.textContent = 'Something went wrong asking that.';
+          thinking.classList.add('chatbot-msg-error');
+        });
+    });
+  })();
+</script>
+{% elif overall and overall.total > 0 %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="{{ url_for('static', filename='timeline.js') }}"></script>
+<script>
+  const FUNNEL_STEPS = ["total", "reached", "l1_cleared", "l2_cleared", "l3_cleared", "offer_made", "joined"];
+  const FUNNEL_LABELS = ["Sourced", "Reached", "L1", "L2", "L3", "Offered", "Joined"];
+  const STATUS_LABELS = { active: "Ongoing", closed: "Closed", upcoming: "Upcoming" };
+
+  const positionCharts = {};
+  const initialRows = {{ funnel_rows | tojson }};
+
+  initialRows.forEach((row) => {
+    const canvas = document.getElementById(`pos-chart-${row.position_id}`);
+    if (!canvas) return;
+    positionCharts[row.position_id] = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: FUNNEL_LABELS,
+        datasets: [{ data: FUNNEL_STEPS.map((k) => row[k]), backgroundColor: "#662984", borderRadius: 4 }],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } }, x: { ticks: { font: { size: 9 } } } },
+      },
+    });
+  });
+
+  const initialCounts = {{ counts | tojson }};
+  const statusDonut = new Chart(document.getElementById('status-donut'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Active', 'Closed', 'Upcoming'],
+      datasets: [{
+        data: [initialCounts.active, initialCounts.closed, initialCounts.upcoming],
+        backgroundColor: ['#96C800', '#797973', '#F3B827'],
+      }],
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } },
+  });
+
+  // Recruiting-timing graphs (Time to Fill / Age of Open Positions / Time to
+  // Hire by Role / Offer Acceptance Rate) - common recruiting-dashboard
+  // widgets; the underlying per-position days_open/days_to_fill were already
+  // computed by the backend, just not previously graphed.
+  const barChartOptions = {
+    indexAxis: 'y',
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } }, y: { ticks: { font: { size: 9 } } } },
+  };
+
+  const filledRows = initialRows.filter((r) => r.days_to_fill !== null && r.days_to_fill !== undefined);
+  const timeToFillCanvas = document.getElementById('time-to-fill-chart');
+  if (timeToFillCanvas && filledRows.length) {
+    new Chart(timeToFillCanvas, {
+      type: 'bar',
+      data: {
+        labels: filledRows.map((r) => r.title),
+        datasets: [{ data: filledRows.map((r) => r.days_to_fill), backgroundColor: '#0096AF', borderRadius: 4 }],
+      },
+      options: barChartOptions,
+    });
+  }
+
+  const openRows = initialRows.filter((r) => r.days_to_fill === null || r.days_to_fill === undefined);
+  const ageOfJobCanvas = document.getElementById('age-of-job-chart');
+  if (ageOfJobCanvas && openRows.length) {
+    new Chart(ageOfJobCanvas, {
+      type: 'bar',
+      data: {
+        labels: openRows.map((r) => r.title),
+        datasets: [{ data: openRows.map((r) => r.days_open), backgroundColor: '#F3B827', borderRadius: 4 }],
+      },
+      options: barChartOptions,
+    });
+  }
+
+  const timeToHireRows = {{ (days_to_hire_by_position or []) | tojson }};
+  const timeToHireCanvas = document.getElementById('time-to-hire-chart');
+  if (timeToHireCanvas && timeToHireRows.length) {
+    new Chart(timeToHireCanvas, {
+      type: 'bar',
+      data: {
+        labels: timeToHireRows.map((r) => r.title),
+        datasets: [{ data: timeToHireRows.map((r) => r.avg_days), backgroundColor: '#662984', borderRadius: 4 }],
+      },
+      options: barChartOptions,
+    });
+  }
+
+  const offerAcceptance = {{ (offer_acceptance or {}) | tojson }};
+  const offerAcceptanceCanvas = document.getElementById('offer-acceptance-chart');
+  if (offerAcceptanceCanvas && offerAcceptance.rate !== null && offerAcceptance.rate !== undefined) {
+    new Chart(offerAcceptanceCanvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['Accepted', 'Declined'],
+        datasets: [{ data: [offerAcceptance.accepted, offerAcceptance.declined], backgroundColor: ['#96C800', '#B51729'] }],
+      },
+      options: { plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } },
+    });
+  }
+
+  function applyDashboardData(data) {
+    const overall = data.overall;
+    document.querySelectorAll("[data-overall]").forEach((el) => {
+      const key = el.dataset.overall;
+      el.textContent = key === "selection_rate" ? overall[key] + "%" : overall[key];
+    });
+    document.querySelectorAll("[data-count]").forEach((el) => {
+      el.textContent = data.counts[el.dataset.count];
+    });
+    statusDonut.data.datasets[0].data = [data.counts.active, data.counts.closed, data.counts.upcoming];
+    statusDonut.update();
+
+    document.querySelectorAll("#funnel-table tbody tr[data-position-id]").forEach((tr) => {
+      const posId = tr.dataset.positionId;
+      const source = posId === "total" ? overall : data.funnel_rows.find((r) => String(r.position_id) === posId);
+      if (!source) return;
+      tr.querySelectorAll("td[data-field]").forEach((td) => {
+        td.textContent = source[td.dataset.field];
+      });
+    });
+
+    data.funnel_rows.forEach((row) => {
+      const card = document.querySelector(`.position-card[data-position-id="${row.position_id}"]`);
+      if (card) {
+        const badge = card.querySelector('[data-field="status"]');
+        badge.textContent = STATUS_LABELS[row.status];
+        badge.className = `status-badge status-${row.status}`;
+        card.querySelector('[data-field="selection_rate"]').textContent = row.selection_rate + "%";
+      }
+      const chart = positionCharts[row.position_id];
+      if (chart) {
+        chart.data.datasets[0].data = FUNNEL_STEPS.map((k) => row[k]);
+        chart.update();
+      }
+    });
+  }
+
+  setInterval(() => {
+    fetch("/dashboard.json")
+      .then((r) => r.json())
+      .then(applyDashboardData)
+      .catch(() => {});
+  }, 6000);
+
+  initCalendarModal({
+    triggerId: 'calendar-btn',
+    modalId: 'calendar-modal',
+    closeId: 'calendar-close',
+    monthUrl: '/calendar/month.json',
+    dayUrl: '/calendar/day.json',
+  });
+</script>
+{% endif %}
+<script>
+  // Open scrolled to today's end, not the oldest data - recent activity is
+  // what's actually useful to see first, same as GitHub's own heatmap.
+  (function () {
+    var scroller = document.querySelector(".heatmap-scroll");
+    if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+  })();
+</script>
+<script>
+  // Picking a name from "Assigned Team" fills the stakeholder name/email
+  // fields instead of retyping someone who's already assigned to this
+  // position - the two lists can overlap, this just avoids duplicate entry.
+  document.querySelectorAll(".stakeholder-pick-assigned").forEach(function (select) {
+    select.addEventListener("change", function () {
+      var opt = select.selectedOptions[0];
+      if (!opt || !opt.value) return;
+      var nameField = document.getElementById(select.dataset.nameTarget);
+      var emailField = document.getElementById(select.dataset.emailTarget);
+      if (nameField) nameField.value = opt.dataset.name || "";
+      if (emailField) emailField.value = opt.dataset.email || "";
+    });
+  });
+</script>
+{% endblock %}

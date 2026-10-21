@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Send Email — {{ position.title }}{% endblock %}
+{% block content %}
+<div class="form-screen">
+  <div class="form-card send-email-card">
+    <a href="{{ url_for('resumes', position_id=position.id) }}" class="back-link">&larr; Back to Resumes</a>
+    <h1>Send Email</h1>
+    <p class="form-subheading">{{ position.title }} &mdash; {{ candidates|length }} candidate{{ '' if candidates|length == 1 else 's' }} selected</p>
+
+    {% if not has_email_account %}
+    <div class="alert alert-error">
+      No email account connected yet &mdash; sends below will fail until you add your Outlook address and app password under
+      <a href="{{ url_for('settings') }}">Settings</a>.
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    {% if results %}
+    <div class="email-results">
+      {% for r in results %}
+      <div class="email-result-row email-result-{{ r.status }}">
+        <span class="email-result-name">{{ r.candidate }}</span>
+        <span class="email-result-status">{{ r.status }}</span>
+        <span class="email-result-detail">{{ r.detail }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <a href="{{ url_for('resumes', position_id=position.id) }}" class="btn btn-primary btn-block">Back to Resumes</a>
+    {% else %}
+    <form method="post" id="send-email-form">
+      {% for c in candidates %}
+      <input type="hidden" name="candidate_id" value="{{ c.id }}">
+      {% endfor %}
+
+      <label class="field-label">Did the candidate answer the call?</label>
+      <div class="radio-row">
+        <label><input type="radio" name="call_answered" value="yes" checked> Yes</label>
+        <label><input type="radio" name="call_answered" value="no"> No</label>
+      </div>
+
+      <div id="send-option-group">
+        <label class="field-label">What would you like to send?</label>
+        <div class="radio-row radio-row-wrap">
+          <label><input type="radio" name="send_option" value="jd_and_link" checked> Job Description + Interview Invite</label>
+          <label><input type="radio" name="send_option" value="jd_only"> Job Description only</label>
+          <label><input type="radio" name="send_option" value="link_only"> Interview Invite only</label>
+        </div>
+      </div>
+
+      <p id="no-response-note" class="field-hint" hidden>
+        Sends the standard "missed call" follow-up email with the Job Description attached &mdash; no interview details needed.
+      </p>
+
+      <div id="interview-fields">
+        <label class="field-label" for="interview_date">Interview date</label>
+        <input type="text" id="interview_date" name="interview_date" placeholder="e.g. 20-08-2026" value="{{ form.interview_date if form else '' }}">
+        <label class="field-label" for="interview_time">Interview time</label>
+        <input type="text" id="interview_time" name="interview_time" placeholder="e.g. 3:00 PM IST" value="{{ form.interview_time if form else '' }}">
+        <label class="field-label" for="teams_link">Teams meeting link</label>
+        <input type="text" id="teams_link" name="teams_link" placeholder="https://teams.microsoft.com/l/meetup-join/..." value="{{ form.teams_link if form else '' }}">
+      </div>
+
+      <label class="field-label">Recipients</label>
+      <div class="email-recipients">
+        {% for c in candidates %}
+        <div class="email-recipient-row">
+          <span class="email-recipient-name">{{ c.candidate_name or c.resume_filename }}</span>
+          <input type="text" name="email_{{ c.id }}" value="{{ c.email or '' }}" placeholder="No email found - enter one">
+        </div>
+        {% endfor %}
+      </div>
+
+      <label class="field-label" for="personal_note">Personal note <span class="field-hint-small">(optional &mdash; added on top of the email template, which itself isn't editable here)</span></label>
+      <textarea id="personal_note" name="personal_note" rows="3" placeholder="e.g. a specific reason this candidate stood out">{{ form.personal_note if form else '' }}</textarea>
+      <button type="button" class="btn btn-secondary btn-small" id="draft-note-btn">Draft with AI</button>
+      <span id="draft-note-status" class="field-hint-small"></span>
+
+      <label class="field-label">Preview <span class="field-hint-small">(uses the email template &mdash; not editable here)</span></label>
+      <pre id="email-preview" class="email-preview"></pre>
+
+      <button type="submit" class="btn btn-primary btn-block">Send to {{ candidates|length }} Candidate{{ '' if candidates|length == 1 else 's' }}</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const ROLE_NAME = {{ position.title | tojson }};
+  const SAMPLE_NAME = {{ (candidates[0].candidate_name or candidates[0].resume_filename) | tojson }};
+
+  const sendOptionGroup = document.getElementById('send-option-group');
+  const interviewFields = document.getElementById('interview-fields');
+  const noResponseNote = document.getElementById('no-response-note');
+  const preview = document.getElementById('email-preview');
+  const dateInput = document.getElementById('interview_date');
+  const timeInput = document.getElementById('interview_time');
+  const linkInput = document.getElementById('teams_link');
+  const noteInput = document.getElementById('personal_note');
+  const draftNoteBtn = document.getElementById('draft-note-btn');
+  const draftNoteStatus = document.getElementById('draft-note-status');
+
+  if (draftNoteBtn) {
+    draftNoteBtn.addEventListener('click', () => {
+      draftNoteBtn.disabled = true;
+      draftNoteStatus.textContent = 'Drafting...';
+      fetch('/ai/draft-email-note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidate_name: SAMPLE_NAME, role_name: ROLE_NAME, context: currentKind() }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          draftNoteBtn.disabled = false;
+          if (data.error) { draftNoteStatus.textContent = data.error; return; }
+          noteInput.value = data.note;
+          draftNoteStatus.textContent = 'Drafted — review and edit before sending.';
+          update();
+        })
+        .catch(() => { draftNoteBtn.disabled = false; draftNoteStatus.textContent = 'Something went wrong drafting this.'; });
+    });
+  }
+
+  function callAnswered() {
+    return document.querySelector('input[name="call_answered"]:checked').value;
+  }
+  function sendOption() {
+    return document.querySelector('input[name="send_option"]:checked').value;
+  }
+  function currentKind() {
+    return callAnswered() === 'no' ? 'no_response' : sendOption();
+  }
+
+  // Always fetches the live wording from the template's .docx file, so the
+  // preview matches exactly what a send will use - never a stale copy.
+  let previewToken = 0;
+  function update() {
+    const kind = currentKind();
+    const answered = callAnswered() === 'yes';
+    sendOptionGroup.hidden = !answered;
+    noResponseNote.hidden = answered;
+    const needsLink = kind === 'link_only' || kind === 'jd_and_link';
+    interviewFields.hidden = !needsLink;
+    [dateInput, timeInput, linkInput].forEach((el) => { el.required = needsLink; });
+
+    const token = ++previewToken;
+    const params = new URLSearchParams({
+      kind, role_name: ROLE_NAME, candidate_name: SAMPLE_NAME,
+      date: dateInput.value, time: timeInput.value, teams_link: linkInput.value,
+      custom_note: noteInput.value,
+    });
+    fetch(`/email-preview?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (token !== previewToken) return; // a newer request has since started
+        preview.textContent = data.body;
+      })
+      .catch(() => {
+        if (token === previewToken) preview.textContent = 'Preview unavailable.';
+      });
+  }
+
+  document.querySelectorAll('input[name="call_answered"], input[name="send_option"]').forEach((el) => el.addEventListener('change', update));
+  [dateInput, timeInput, linkInput].forEach((el) => el.addEventListener('input', update));
+  noteInput.addEventListener('input', update);
+  update();
+</script>
+{% endblock %}

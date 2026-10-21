@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+{% block title %}{{ position.title }} — Tracker{% endblock %}
+{% block content %}
+<div class="tracker-page" data-position-id="{{ position.id }}">
+  <div class="tracker-header">
+    <div>
+      <a href="{{ url_for('home', position=position.id) }}" class="back-link">&larr; {{ position.title }}</a>
+      <h1>Hiring Tracker</h1>
+      <p class="tracker-days-open">
+        {% if position_timing.days_to_fill is not none %}
+        Filled in {{ position_timing.days_to_fill }} day{{ '' if position_timing.days_to_fill == 1 else 's' }}
+        {% else %}
+        Open {{ position_timing.days_open }} day{{ '' if position_timing.days_open == 1 else 's' }}
+        {% endif %}
+      </p>
+    </div>
+    <div class="jd-actions">
+      <div class="jd-actions-group">
+        <a href="{{ url_for('resumes', position_id=position.id) }}" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
+          Resumes
+        </a>
+        <button type="button" id="calendar-btn" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          Calendar
+        </button>
+        <a href="{{ url_for('tracker_export_download', position_id=position.id) }}" class="btn btn-secondary" title="Download this tracker as an Excel file">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M20 21H4"/></svg>
+          Download Excel
+        </a>
+        <a href="{{ url_for('position_report_pdf', position_id=position.id) }}" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/></svg>
+          Generate Report
+        </a>
+      </div>
+    </div>
+  </div>
+
+  {% if deadline %}
+  <div class="deadline-banner deadline-banner-{{ deadline.level }}">{{ deadline.message }}</div>
+  {% endif %}
+
+  {% if position.uses_dynamic_rounds %}
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi-card kpi-neutral"><div class="kpi-value">{{ kpis.total }}</div><div class="kpi-label">Total Candidates</div></div>
+    <div class="kpi-card kpi-cyan"><div class="kpi-value">{{ kpis.reached }}</div><div class="kpi-label">Reached</div></div>
+    {% for round in interview_rounds %}
+    <div class="kpi-card kpi-cyan"><div class="kpi-value">{{ round_cleared_counts[round.id] }}</div><div class="kpi-label">{{ round.round_label }} Cleared</div></div>
+    {% endfor %}
+    <div class="kpi-card kpi-purple"><div class="kpi-value">{{ kpis.offer_made }}</div><div class="kpi-label">Offers Made</div></div>
+    <div class="kpi-card kpi-green"><div class="kpi-value">{{ kpis.joined }}</div><div class="kpi-label">Joined</div></div>
+    <div class="kpi-card kpi-red"><div class="kpi-value">{{ kpis.rejected }}</div><div class="kpi-label">Rejected</div></div>
+    <div class="kpi-card kpi-yellow"><div class="kpi-value">{{ kpis.on_hold }}</div><div class="kpi-label">On Hold</div></div>
+  </div>
+
+  <input type="text" id="tracker-search" class="candidate-search" placeholder="Search candidates...">
+
+  <div class="table-scroll-shell">
+  <div class="tracker-table-wrap">
+    <table class="tracker-table">
+      <thead>
+        <tr>
+          <th class="sticky-col" rowspan="2">Candidate</th>
+          {% for round in interview_rounds %}
+          <th colspan="3">{{ round.round_label }}{% if round.assigned_display_name or round.assigned_username %} <span class="th-stakeholder">({{ round.assigned_display_name or round.assigned_username }})</span>{% endif %}</th>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for round in interview_rounds %}
+          <th class="sub-th">Scheduled</th>
+          <th class="sub-th">Attended</th>
+          <th class="sub-th">Cleared</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set bucket_titles = {'green': 'Strong fit (score above 6)', 'yellow': 'Borderline fit (score 4-6)', 'red': 'Weak fit (score below 4)', 'unscored': 'Not yet scored'} %}
+        {% for c in candidates %}
+        <tr data-candidate-id="{{ c.id }}">
+          <td class="sticky-col bucket-{{ c.bucket }}">
+            <span class="candidate-avatar" title="{{ bucket_titles[c.bucket] }}">{{ (c.candidate_name or c.resume_filename)[0]|upper }}</span>
+            <a href="{{ url_for('resumes', position_id=position.id, candidate=c.id, from='tracker') }}" class="tracker-cand-name" title="View resume">{{ c.candidate_name or c.resume_filename }}</a>
+          </td>
+          {% set cand_status = round_statuses.get(c.id, {}) %}
+          {% for round in interview_rounds %}
+          {% set st = cand_status.get(round.id, {}) %}
+          <td class="checkbox-cell">
+            <input type="checkbox" class="round-checkbox" data-round-id="{{ round.id }}" data-field="scheduled" {{ 'checked' if st.get('scheduled') else '' }}>
+            <button type="button" class="send-link-btn {{ 'send-link-btn-sent' if st.get('teams_link') else '' }}"
+                    data-candidate-id="{{ c.id }}" data-candidate-name="{{ c.candidate_name or c.resume_filename }}"
+                    data-round-id="{{ round.id }}" data-round-label="{{ round.round_label }}" data-dynamic="1"
+                    data-existing-link="{{ st.get('teams_link') or '' }}"
+                    title="{{ 'Resend/update interview link' if st.get('teams_link') else 'Send interview link' }}">
+              &#9993;
+            </button>
+          </td>
+          <td class="checkbox-cell">
+            <input type="checkbox" class="round-checkbox" data-round-id="{{ round.id }}" data-field="attended" {{ 'checked' if st.get('attended') else '' }}>
+          </td>
+          <td class="checkbox-cell">
+            <input type="checkbox" class="round-checkbox" data-round-id="{{ round.id }}" data-field="cleared" {{ 'checked' if st.get('cleared') else '' }}>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="scroll-fade-right" aria-hidden="true"></div>
+  </div>
+  {% else %}
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi-card kpi-neutral"><div class="kpi-value" data-kpi="total">{{ kpis.total }}</div><div class="kpi-label">Total Candidates</div></div>
+    <div class="kpi-card kpi-cyan"><div class="kpi-value" data-kpi="reached">{{ kpis.reached }}</div><div class="kpi-label">Reached</div></div>
+    <div class="kpi-card kpi-cyan"><div class="kpi-value" data-kpi="l1_cleared">{{ kpis.l1_cleared }}</div><div class="kpi-label">L1 Cleared</div></div>
+    <div class="kpi-card kpi-cyan"><div class="kpi-value" data-kpi="l2_cleared">{{ kpis.l2_cleared }}</div><div class="kpi-label">L2 Cleared</div></div>
+    <div class="kpi-card kpi-cyan"><div class="kpi-value" data-kpi="l3_cleared">{{ kpis.l3_cleared }}</div><div class="kpi-label">L3 Cleared</div></div>
+    <div class="kpi-card kpi-purple"><div class="kpi-value" data-kpi="offer_made">{{ kpis.offer_made }}</div><div class="kpi-label">Offers Made</div></div>
+    <div class="kpi-card kpi-green"><div class="kpi-value" data-kpi="joined">{{ kpis.joined }}</div><div class="kpi-label">Joined</div></div>
+    <div class="kpi-card kpi-red"><div class="kpi-value" data-kpi="rejected">{{ kpis.rejected }}</div><div class="kpi-label">Rejected</div></div>
+    <div class="kpi-card kpi-yellow"><div class="kpi-value" data-kpi="on_hold">{{ kpis.on_hold }}</div><div class="kpi-label">On Hold</div></div>
+    {% if avg_days_to_hire is not none %}
+    <div class="kpi-card kpi-highlight"><div class="kpi-value">{{ avg_days_to_hire }}d</div><div class="kpi-label">Avg Days to Hire</div></div>
+    {% endif %}
+  </div>
+
+  <input type="text" id="tracker-search" class="candidate-search" placeholder="Search candidates...">
+
+  {% set group_levels = {'L1 Interview': 'l1', 'L2 Interview': 'l2', 'L3 Interview': 'l3'} %}
+  <div class="table-scroll-shell">
+  <div class="tracker-table-wrap">
+    <table class="tracker-table">
+      <thead>
+        <tr>
+          <th class="sticky-col" rowspan="2">Candidate</th>
+          {% for group, items in stage_groups %}
+          <th colspan="{{ items|length }}">
+            {{ group }}{% if group_levels.get(group) and group_levels[group] in stakeholders %} <span class="th-stakeholder">({{ stakeholders[group_levels[group]].name }})</span>{% endif %}
+          </th>
+          {% endfor %}
+          {% for field, label in status_fields %}
+          <th rowspan="2">{{ label }}</th>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for group, items in stage_groups %}
+            {% for field, label, g in items %}
+            <th class="sub-th">{{ label }}</th>
+            {% endfor %}
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set bucket_titles = {'green': 'Strong fit (score above 6)', 'yellow': 'Borderline fit (score 4-6)', 'red': 'Weak fit (score below 4)', 'unscored': 'Not yet scored'} %}
+        {% for c in candidates %}
+        <tr data-candidate-id="{{ c.id }}">
+          <td class="sticky-col bucket-{{ c.bucket }}">
+            <span class="candidate-avatar" title="{{ bucket_titles[c.bucket] }}">{{ (c.candidate_name or c.resume_filename)[0]|upper }}</span>
+            <a href="{{ url_for('resumes', position_id=position.id, candidate=c.id, from='tracker') }}" class="tracker-cand-name" title="View resume">{{ c.candidate_name or c.resume_filename }}</a>
+          </td>
+          {% set tl = timeline[c.id] %}
+          {% for group, items in stage_groups %}
+            {% for field, label, g in items %}
+            {% set st = tl[field] %}
+            <td class="checkbox-cell">
+              <input type="checkbox" class="stage-checkbox" data-field="{{ field }}" {{ 'checked' if c[field] else '' }}>
+              {% if st.state != 'future' %}
+              <span class="stage-days stage-days-{{ st.state }}" title="{{ {'done': 'Took', 'pending': 'Waiting', 'stopped': 'Stopped after'}[st.state] }} {{ st.days }} day(s)">{{ st.days }}d</span>
+              {% endif %}
+              {% if field.endswith('_scheduled') %}
+              {% set round_key = field[:2] %}
+              <button type="button" class="send-link-btn {{ 'send-link-btn-sent' if c[round_key + '_teams_link'] else '' }}"
+                      data-candidate-id="{{ c.id }}" data-candidate-name="{{ c.candidate_name or c.resume_filename }}"
+                      data-round="{{ round_key }}" data-existing-link="{{ c[round_key + '_teams_link'] or '' }}"
+                      title="{{ 'Resend/update interview link' if c[round_key + '_teams_link'] else 'Send interview link' }}">
+                &#9993;
+              </button>
+              {% endif %}
+            </td>
+            {% endfor %}
+          {% endfor %}
+          {% for field, label in status_fields %}
+          <td class="checkbox-cell">
+            <input type="checkbox" class="stage-checkbox" data-field="{{ field }}" {{ 'checked' if c[field] else '' }}>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="scroll-fade-right" aria-hidden="true"></div>
+  </div>
+  {% endif %}
+</div>
+
+<div id="calendar-modal" class="modal-overlay" hidden>
+  <div class="modal-card calendar-modal-card">
+    <button id="calendar-close" class="modal-close">&times;</button>
+    <h2>Calendar</h2>
+    <div class="calendar-nav">
+      <button type="button" class="calendar-prev btn btn-secondary btn-small">&lsaquo;</button>
+      <span class="calendar-month-title"></span>
+      <button type="button" class="calendar-next btn btn-secondary btn-small">&rsaquo;</button>
+    </div>
+    <div class="calendar-grid"></div>
+    <div class="calendar-day-summary"><p>Click a date to see that day's activity.</p></div>
+  </div>
+</div>
+
+<div id="teams-link-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <button id="teams-link-close" class="modal-close">&times;</button>
+    <h2 id="teams-link-title">Send Interview Link</h2>
+    <form id="teams-link-form">
+      <label class="field-label" for="teams_link_date">Interview date</label>
+      <input type="text" id="teams_link_date" placeholder="e.g. 20-08-2026">
+      <label class="field-label" for="teams_link_time">Interview time</label>
+      <input type="text" id="teams_link_time" placeholder="e.g. 3:00 PM IST">
+      <label class="field-label" for="teams_link_input">Teams meeting link</label>
+      <input type="text" id="teams_link_input" placeholder="https://teams.microsoft.com/l/meetup-join/...">
+      <label class="field-label" for="teams_link_note">Personal note <span class="field-hint-small">(optional, added on top of the template below)</span></label>
+      <textarea id="teams_link_note" rows="2" placeholder="e.g. a specific reason this candidate stood out"></textarea>
+      <label class="checkbox-inline" style="margin-top:10px;"><input type="checkbox" id="teams_link_record"> This interview is to be recorded</label>
+      <button type="button" class="btn btn-secondary btn-small" id="teams-link-draft-btn">Draft with AI</button>
+      <span id="teams-link-draft-status" class="field-hint-small"></span>
+      <label class="field-label">Preview <span class="field-hint-small">(the Interview Invite email template)</span></label>
+      <pre id="teams-link-preview" class="email-preview"></pre>
+      <p id="teams-link-status" class="field-hint-small"></p>
+      <button type="submit" class="btn btn-primary btn-block">Send</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='calendar.js') }}"></script>
+<script src="{{ url_for('static', filename='table-scroll.js') }}"></script>
+<script>
+  const page = document.querySelector('.tracker-page');
+  const positionId = page.dataset.positionId;
+  const search = document.getElementById('tracker-search');
+
+  if (search) {
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      document.querySelectorAll('.tracker-table tbody tr').forEach((row) => {
+        const name = row.querySelector('.tracker-cand-name').textContent.toLowerCase();
+        row.style.display = name.includes(q) ? '' : 'none';
+      });
+    });
+  }
+
+  document.querySelectorAll('.stage-checkbox').forEach((box) => {
+    box.addEventListener('change', () => {
+      const row = box.closest('tr');
+      const candidateId = row.dataset.candidateId;
+      const field = box.dataset.field;
+      const value = box.checked;
+      box.disabled = true;
+      fetch(`/candidates/${candidateId}/stage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, value }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) {
+            box.disabled = false;
+            box.checked = !value;
+            alert(data.error);
+            return;
+          }
+          // Day counters depend on the whole per-candidate stage sequence, so
+          // a full reload keeps them honest rather than duplicating the freeze
+          // logic in JS.
+          window.location.reload();
+        })
+        .catch(() => {
+          box.disabled = false;
+          box.checked = !value;
+        });
+    });
+  });
+
+  document.querySelectorAll('.round-checkbox').forEach((box) => {
+    box.addEventListener('change', () => {
+      const row = box.closest('tr');
+      const candidateId = row.dataset.candidateId;
+      const roundId = box.dataset.roundId;
+      const field = box.dataset.field;
+      const value = box.checked;
+      box.disabled = true;
+      fetch(`/candidates/${candidateId}/rounds/${roundId}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+        body: JSON.stringify({ field, value }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data.ok) {
+            box.disabled = false;
+            box.checked = !value;
+            return;
+          }
+          window.location.reload();
+        })
+        .catch(() => {
+          box.disabled = false;
+          box.checked = !value;
+        });
+    });
+  });
+
+  initCalendarModal({
+    triggerId: 'calendar-btn',
+    modalId: 'calendar-modal',
+    closeId: 'calendar-close',
+    monthUrl: `/positions/${positionId}/calendar/month.json`,
+    dayUrl: `/positions/${positionId}/calendar/day.json`,
+  });
+
+  const ROUND_LABELS = { l1: 'L1', l2: 'L2', l3: 'L3' };
+  const POSITION_TITLE = {{ position.title | tojson }};
+
+  const teamsModal = document.getElementById('teams-link-modal');
+  const teamsForm = document.getElementById('teams-link-form');
+  const teamsTitle = document.getElementById('teams-link-title');
+  const teamsDateInput = document.getElementById('teams_link_date');
+  const teamsTimeInput = document.getElementById('teams_link_time');
+  const teamsLinkInput = document.getElementById('teams_link_input');
+  const teamsNoteInput = document.getElementById('teams_link_note');
+  const teamsDraftBtn = document.getElementById('teams-link-draft-btn');
+  const teamsDraftStatus = document.getElementById('teams-link-draft-status');
+  const teamsPreview = document.getElementById('teams-link-preview');
+  const teamsStatus = document.getElementById('teams-link-status');
+  const teamsClose = document.getElementById('teams-link-close');
+  let activeSendBtn = null;
+  let activeCandidateName = '';
+  let activeRound = '';
+  let activeRoundLabel = '';
+
+  if (teamsDraftBtn) {
+    teamsDraftBtn.addEventListener('click', () => {
+      teamsDraftBtn.disabled = true;
+      teamsDraftStatus.textContent = 'Drafting...';
+      fetch('/ai/draft-email-note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidate_name: activeCandidateName, role_name: POSITION_TITLE,
+          context: `${activeRoundLabel} interview invite`,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          teamsDraftBtn.disabled = false;
+          if (data.error) { teamsDraftStatus.textContent = data.error; return; }
+          teamsNoteInput.value = data.note;
+          teamsDraftStatus.textContent = 'Drafted — review and edit before sending.';
+          updateTeamsPreview();
+        })
+        .catch(() => { teamsDraftBtn.disabled = false; teamsDraftStatus.textContent = 'Something went wrong drafting this.'; });
+    });
+  }
+
+  // Always fetches the live wording from the Interview Invite .docx file, so
+  // the preview matches exactly what a send will use - never a stale copy.
+  let previewToken = 0;
+  function updateTeamsPreview() {
+    const token = ++previewToken;
+    const params = new URLSearchParams({
+      kind: 'link_only', role_name: POSITION_TITLE, candidate_name: activeCandidateName,
+      date: teamsDateInput.value, time: teamsTimeInput.value, teams_link: teamsLinkInput.value,
+      custom_note: teamsNoteInput.value,
+    });
+    fetch(`/email-preview?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (token !== previewToken) return; // a newer request has since started
+        teamsPreview.textContent = data.body;
+      })
+      .catch(() => {
+        if (token === previewToken) teamsPreview.textContent = 'Preview unavailable.';
+      });
+  }
+
+  document.querySelectorAll('.send-link-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activeSendBtn = btn;
+      activeCandidateName = btn.dataset.candidateName;
+      activeRound = btn.dataset.round;
+      activeRoundLabel = btn.dataset.dynamic ? btn.dataset.roundLabel : (ROUND_LABELS[btn.dataset.round] || '');
+      teamsTitle.textContent = `Send Interview Link — ${activeRoundLabel} — ${btn.dataset.candidateName}`;
+      teamsDateInput.value = '';
+      teamsTimeInput.value = '';
+      teamsLinkInput.value = btn.dataset.existingLink || '';
+      document.getElementById('teams_link_record').checked = false;
+      teamsNoteInput.value = '';
+      teamsDraftStatus.textContent = '';
+      teamsStatus.textContent = '';
+      updateTeamsPreview();
+      teamsModal.hidden = false;
+    });
+  });
+  [teamsDateInput, teamsTimeInput, teamsLinkInput, teamsNoteInput].forEach((el) => el.addEventListener('input', updateTeamsPreview));
+  if (teamsClose) teamsClose.addEventListener('click', () => { teamsModal.hidden = true; });
+  teamsModal.addEventListener('click', (e) => { if (e.target === teamsModal) teamsModal.hidden = true; });
+
+  teamsForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!activeSendBtn || !teamsDateInput.value.trim() || !teamsTimeInput.value.trim() || !teamsLinkInput.value.trim()) {
+      teamsStatus.textContent = 'Please fill in the date, time, and Teams link.';
+      return;
+    }
+    const candidateId = activeSendBtn.dataset.candidateId;
+    const isDynamic = !!activeSendBtn.dataset.dynamic;
+    const sendUrl = isDynamic
+      ? `/candidates/${candidateId}/rounds/${activeSendBtn.dataset.roundId}/send-link`
+      : `/candidates/${candidateId}/send-teams-link`;
+    const sendBody = isDynamic
+      ? {
+          date: teamsDateInput.value.trim(),
+          time: teamsTimeInput.value.trim(),
+          teams_link: teamsLinkInput.value.trim(),
+          note: teamsNoteInput.value.trim(),
+          record: document.getElementById('teams_link_record').checked,
+        }
+      : {
+          round: activeSendBtn.dataset.round,
+          date: teamsDateInput.value.trim(),
+          time: teamsTimeInput.value.trim(),
+          teams_link: teamsLinkInput.value.trim(),
+          note: teamsNoteInput.value.trim(),
+          record: document.getElementById('teams_link_record').checked,
+        };
+    teamsStatus.textContent = 'Sending...';
+    fetch(sendUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sendBody),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        teamsStatus.textContent = data.message;
+        if (data.ok) {
+          activeSendBtn.classList.add('send-link-btn-sent');
+          activeSendBtn.dataset.existingLink = teamsLinkInput.value.trim();
+          setTimeout(() => { teamsModal.hidden = true; }, 1200);
+        }
+      })
+      .catch(() => { teamsStatus.textContent = 'Something went wrong sending this.'; });
+  });
+</script>
+{% endblock %}

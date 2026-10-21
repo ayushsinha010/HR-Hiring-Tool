@@ -1,0 +1,179 @@
+{# Hiring Timeline and Buffer Time.
+   - Overall dashboard: the LAST section (timeline_scope is not set; every position + every candidate).
+   - A position's own screen: the same section scoped to that position (timeline_scope = 'position';
+     the redundant Position column is hidden in the candidate table).
+   Needs `timeline_data` = timeline.build_timeline(...) for the right scope, so the numbers are the
+   same ones in both places and in the PDF reports. #}
+{% set tl = timeline_data %}
+{% set tg = tl.targets %}
+{% set in_position = (timeline_scope == 'position') %}
+{% set phase_cols = ['Sourced', 'Reached', 'Interview Scheduled', 'Interviewed', 'Round Cleared', 'Offer Made', 'On Hold', 'Joined', 'Rejected'] %}
+{% set phase_short = {'Sourced': 'Sourced', 'Reached': 'Reached', 'Interview Scheduled': 'Scheduled', 'Interviewed': 'Interviewed', 'Round Cleared': 'Cleared', 'Offer Made': 'Offer', 'On Hold': 'Hold', 'Joined': 'Joined', 'Rejected': 'Rejected'} %}
+<section class="timeline-section" id="timeline-section">
+  <div class="timeline-heading-row">
+    <div>
+      <h2 class="timeline-heading">Hiring Timeline and Buffer Time</h2>
+      <p class="timeline-intro">When the JD went up, when each CV came in, where every CV is now, and how long things have been waiting &mdash; in calendar days. A dash (&ndash;) means that date was never recorded; <span class="est-mark">est.</span> means no stage date existed, so the CV-added date stands in.</p>
+    </div>
+    <a href="{{ url_for('settings') }}#timeline-targets" class="btn btn-secondary btn-small">Edit targets</a>
+  </div>
+
+  <div class="timeline-targets">
+    <span class="timeline-target-label">Over-target when:</span>
+    <span class="chip chip-grey">in one stage &gt; {{ tg.stage_age_days }}d</span>
+    <span class="chip chip-grey">feedback pending &gt; {{ tg.feedback_pending_days }}d</span>
+    <span class="chip chip-grey">no decision after feedback &gt; {{ tg.decision_pending_days }}d</span>
+    <span class="chip chip-grey">position open &gt; {{ tg.position_open_days }}d</span>
+    <span class="timeline-target-summary {{ 'timeline-target-summary-bad' if tl.totals.candidates_over_target else '' }}">{{ tl.totals.candidates_over_target }} of {{ tl.totals.candidates }} candidate{{ '' if tl.totals.candidates == 1 else 's' }} over target</span>
+  </div>
+
+  <h3 class="timeline-subheading">{{ 'Position summary' if in_position else 'By position' }}</h3>
+  <div class="table-scroll-shell">
+  <div class="tracker-table-wrap dashboard-table-wrap">
+    <table class="tracker-table timeline-table" id="timeline-positions-table">
+      <thead>
+        <tr>
+          <th class="sticky-col" rowspan="2">Position</th>
+          <th colspan="4">JD and CVs</th>
+          <th colspan="4">Interviews and feedback</th>
+          <th colspan="2">Buffer time</th>
+        </tr>
+        <tr>
+          <th class="sub-th">JD uploaded on</th>
+          <th class="sub-th">First CV on</th>
+          <th class="sub-th">JD to 1st CV (d)</th>
+          <th class="sub-th">CVs received</th>
+          <th class="sub-th">Scheduled</th>
+          <th class="sub-th">Done</th>
+          <th class="sub-th">Feedback saved</th>
+          <th class="sub-th">Feedback pending</th>
+          <th class="sub-th">Position open (d)</th>
+          <th class="sub-th">Items over target</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in tl.positions %}
+        <tr>
+          <td class="sticky-col">{% if in_position %}{{ p.title }}{% else %}<a href="{{ url_for('home', position=p.position_id) }}" class="tracker-cand-name">{{ p.title }}</a>{% endif %}</td>
+          <td>{{ p.jd_uploaded_on|short_date }}</td>
+          <td>{{ p.first_cv_on|short_date }}</td>
+          <td>{{ fmt_days(p.days_jd_to_first_cv) }}</td>
+          <td>{{ p.cvs_received }}</td>
+          <td>{{ p.interviews_scheduled }}</td>
+          <td>{{ p.interviews_done }}</td>
+          <td>{{ p.feedback_saved }}</td>
+          <td class="{{ 'tl-bad' if p.feedback_pending else '' }}">{{ p.feedback_pending }}</td>
+          <td class="{{ 'tl-bad' if p.open_over_target else '' }}">{{ fmt_days(p.days_to_fill if p.filled and p.days_to_fill is not none else p.open_days) }}{% if p.filled %} <span class="field-hint-small">(filled)</span>{% endif %}</td>
+          <td>
+            {% if p.items_over_target %}<span class="over-target-chip" title="{{ p.candidates_over_target }} candidate(s) over target{{ ' + this position has been open longer than the target' if p.open_over_target else '' }}">{{ p.items_over_target }}</span>{% else %}0{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="sticky-col" colspan="11">No positions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="scroll-fade-right" aria-hidden="true"></div>
+  </div>
+
+  <div class="table-scroll-shell" style="margin-top:10px;">
+  <div class="tracker-table-wrap dashboard-table-wrap">
+    <table class="tracker-table timeline-table" id="timeline-stages-table">
+      <thead>
+        <tr>
+          <th class="sticky-col" rowspan="2">Position</th>
+          <th colspan="{{ phase_cols|length }}">Candidates in each stage</th>
+          <th rowspan="2">Average days per stage</th>
+        </tr>
+        <tr>
+          {% for phase in phase_cols %}
+          <th class="sub-th" title="{{ phase }}">{{ phase_short[phase] }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in tl.positions %}
+        <tr>
+          <td class="sticky-col">{% if in_position %}{{ p.title }}{% else %}<a href="{{ url_for('home', position=p.position_id) }}" class="tracker-cand-name">{{ p.title }}</a>{% endif %}</td>
+          {% for phase in phase_cols %}
+          <td class="{{ 'tl-zero' if not p.stage_counts[phase] else '' }}">{{ p.stage_counts[phase] }}</td>
+          {% endfor %}
+          <td>
+            {% if p.avg_days_per_stage %}
+              {% for phase, avg in p.avg_days_per_stage.items() %}<span class="tl-avg">{{ phase }} {{ avg }}d</span>{% endfor %}
+            {% else %}&ndash;{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="sticky-col" colspan="11">No positions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="scroll-fade-right" aria-hidden="true"></div>
+  </div>
+
+  {% if tl.avg_days_per_stage %}
+  <div class="chart-card timeline-chart-card">
+    <h3>Average days per stage <span class="field-hint-small">({{ 'this position: ' if in_position else '' }}how long candidates have spent in each stage; estimated dates left out)</span></h3>
+    <canvas id="avg-days-stage-chart" height="120"></canvas>
+    <script type="application/json" id="avg-days-data">{{ tl.avg_days_per_stage | tojson }}</script>
+  </div>
+  {% endif %}
+
+  <h3 class="timeline-subheading">By candidate <span class="field-hint-small">&mdash; most delayed first</span></h3>
+  <div class="table-scroll-shell">
+  <div class="tracker-table-wrap dashboard-table-wrap">
+    <table class="tracker-table timeline-table timeline-candidates-table" id="timeline-candidates-table">
+      <thead>
+        <tr>
+          <th class="sticky-col">Candidate</th>
+          {% if not in_position %}<th>Position</th>{% endif %}
+          <th>CV fed on</th>
+          <th>Current stage</th>
+          <th>Entered stage on</th>
+          <th>Days in stage</th>
+          <th>Next interview</th>
+          <th>Feedback</th>
+          <th title="Elapsed calendar days: since the CV was fed in / from CV to interview scheduled / from interview to feedback / from feedback to decision">Buffer days</th>
+          <th>Over target</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in tl.candidates %}
+        <tr class="{{ 'row-over-target' if c.over_target else '' }}">
+          <td class="sticky-col bucket-{{ c.bucket }}">
+            <span class="candidate-avatar" title="{{ {'green': 'Strong fit (score above 6)', 'yellow': 'Borderline fit (score 4-6)', 'red': 'Weak fit (score below 4)', 'unscored': 'Not yet scored'}[c.bucket] }}">{{ c.name[0]|upper }}</span>
+            <a href="{{ url_for('resumes', position_id=c.position_id, candidate=c.candidate_id) }}" class="tracker-cand-name" title="Open this candidate">{{ c.name }}</a>
+          </td>
+          {% if not in_position %}<td>{{ c.position_title }}</td>{% endif %}
+          <td>{{ c.cv_fed_on|short_date }}</td>
+          <td>{{ c.stage_label }}</td>
+          <td>{{ c.entered_stage_on|short_date }}{% if c.entered_is_estimate %} <span class="est-mark" title="Estimated: no stage-change date was recorded for this candidate, so the CV-added date is used.">est.</span>{% endif %}</td>
+          <td>{{ fmt_days(c.days_in_stage) }}{% if c.entered_is_estimate and c.days_in_stage is not none %} <span class="est-mark" title="Counted from the CV-added date (estimate).">est.</span>{% endif %}</td>
+          <td>{{ c.next_interview }}</td>
+          <td><span class="chip tl-fb-{{ c.feedback_state }}">{{ c.feedback_status }}</span></td>
+          <td class="tl-buffer">
+            <span title="Days since the CV was fed in">Since CV <b>{{ fmt_days(c.days_since_cv) }}</b></span>
+            <span title="Days from CV fed in to interview scheduled">CV&rarr;sched <b>{{ fmt_days(c.days_cv_to_schedule) }}</b></span>
+            <span title="Days from the interview to feedback saved">Int&rarr;feedback <b>{{ fmt_days(c.days_interview_to_feedback) }}</b></span>
+            <span title="Days from the first feedback to the decision">Feedback&rarr;decision <b>{{ fmt_days(c.days_feedback_to_decision) }}</b></span>
+          </td>
+          <td>
+            {% if c.over_target %}
+              <span class="over-target-chip">Over target</span>
+              <span class="tl-reasons">{{ c.over_target_reasons | join('; ') }}</span>
+            {% elif c.phase in ('Joined', 'Rejected', 'On Hold') %}&ndash;
+            {% else %}<span class="chip chip-green">On track</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="sticky-col" colspan="{{ 9 if in_position else 10 }}">No candidates yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="scroll-fade-right" aria-hidden="true"></div>
+  </div>
+</section>

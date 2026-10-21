@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}HR Hiring Agent{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{{ 'has-nav' if current_user else 'no-nav' }}">
+  <div class="app-shell">
+    {% if current_user %}
+    <aside class="sidebar">
+      <a href="{{ url_for('home') }}" class="sidebar-brand" title="Go to Dashboard">
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="HR Hiring Agent" class="sidebar-logo">
+        <span class="sidebar-brand-icon">M</span>
+        <span class="sidebar-brand-text">HR Hiring Agent</span>
+      </a>
+      <nav class="sidebar-nav">
+        {% set on_dashboard_endpoint = request.endpoint == 'home' %}
+        {% set viewing_a_position = request.args.get('position') %}
+        <a href="{{ url_for('home') }}"
+           class="sidebar-link {{ 'sidebar-link-active' if on_dashboard_endpoint and not viewing_a_position else ('sidebar-link-active-subtle' if on_dashboard_endpoint and viewing_a_position else '') }}"
+           title="Dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
+          <span>Dashboard</span>
+        </a>
+        {% if current_user.is_admin %}
+        <a href="{{ url_for('audit_log_view') }}" class="sidebar-link {{ 'sidebar-link-active' if request.endpoint == 'audit_log_view' else '' }}" title="Audit Log">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+          <span>Audit Log</span>
+        </a>
+        <a href="{{ url_for('users_view') }}" class="sidebar-link {{ 'sidebar-link-active' if request.endpoint in ('users_view',) else '' }}" title="Users">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Users</span>
+        </a>
+        {% endif %}
+        <a href="{{ url_for('settings') }}" class="sidebar-link {{ 'sidebar-link-active' if request.endpoint == 'settings' else '' }}" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button type="button" class="sidebar-user" id="profile-menu-btn">
+          <span class="sidebar-avatar">{{ (current_user.display_name or current_user.username)[0]|upper }}</span>
+          <span class="sidebar-username">{{ current_user.display_name or current_user.username }}</span>
+        </button>
+        <div class="profile-popover" id="profile-popover" hidden>
+          <div class="profile-popover-name">{{ current_user.display_name or current_user.username }}</div>
+          <div class="profile-popover-detail">{{ current_user.designation or 'No designation set' }}</div>
+          <div class="profile-popover-detail">{{ current_user.department or 'No department set' }}</div>
+          <a href="{{ url_for('settings') }}#profile" class="btn btn-secondary btn-small profile-popover-btn">Profile Settings</a>
+        </div>
+        <a href="{{ url_for('logout') }}" class="sidebar-link sidebar-link-logout" title="Log out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+          <span>Log out</span>
+        </a>
+      </div>
+    </aside>
+    {% endif %}
+    <main class="app-main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% if current_user %}
+  <button type="button" class="corner-icon-btn corner-icon-btn-bell" id="notif-bell-btn" title="Notifications" style="right:66px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    {% if unread_notification_count %}<span class="notif-badge">{{ unread_notification_count if unread_notification_count < 10 else '9+' }}</span>{% endif %}
+  </button>
+  <div class="notif-dropdown" id="notif-dropdown" hidden>
+    <div class="notif-dropdown-header">
+      <span>Notifications</span>
+      {% if unread_notification_count %}
+      <form method="post" action="{{ url_for('mark_all_notifications_read_route') }}"><button type="submit" class="link-btn-small">Mark all read</button></form>
+      {% endif %}
+    </div>
+    {% if not notifications %}
+    <p class="field-hint-small" style="padding:12px;">No notifications yet.</p>
+    {% else %}
+    {% for n in notifications %}
+    <form method="post" action="{{ url_for('mark_notification_read_route', notification_id=n.id) }}" class="notif-row {{ 'notif-row-unread' if not n.is_read else '' }}">
+      <button type="submit" class="notif-row-btn">
+        <span class="notif-row-title">{{ n.title }}</span>
+        <span class="notif-row-message">{{ n.message }}</span>
+        <span class="notif-row-time">{{ n.created_at }}</span>
+      </button>
+    </form>
+    {% endfor %}
+    {% endif %}
+  </div>
+  <a href="{{ url_for('input_logs_view') }}" class="corner-icon-btn {{ 'corner-icon-btn-active' if request.endpoint == 'input_logs_view' else '' }}" title="Input Logs">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/><path d="M8 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h2"/></svg>
+  </a>
+  <div class="modal-overlay" id="quick-capture-overlay" hidden>
+    <div class="modal-card quick-capture-card">
+      <button type="button" class="modal-close" id="quick-capture-close" aria-label="Close">&times;</button>
+      <label class="field-label" for="quick-capture-input">Quick Capture <span class="field-hint-small">(press Q anywhere to open)</span></label>
+      <div class="quick-capture-input-wrap">
+        <div class="quick-capture-highlight" id="quick-capture-highlight" aria-hidden="true"></div>
+        <input type="text" id="quick-capture-input" placeholder="e.g. Noah selected for L2, schedule tomorrow at 3pm" autocomplete="off" spellcheck="false">
+      </div>
+      <div id="quick-capture-result" class="quick-capture-result" hidden></div>
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='quick_capture.js') }}"></script>
+  <script>
+    (function () {
+      var btn = document.getElementById("profile-menu-btn");
+      var pop = document.getElementById("profile-popover");
+      if (!btn || !pop) return;
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        pop.hidden = !pop.hidden;
+      });
+      document.addEventListener("click", function (e) {
+        if (!pop.hidden && !pop.contains(e.target) && e.target !== btn) pop.hidden = true;
+      });
+    })();
+    (function () {
+      var btn = document.getElementById("notif-bell-btn");
+      var panel = document.getElementById("notif-dropdown");
+      if (!btn || !panel) return;
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        panel.hidden = !panel.hidden;
+      });
+      document.addEventListener("click", function (e) {
+        if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) panel.hidden = true;
+      });
+    })();
+  </script>
+  {% endif %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

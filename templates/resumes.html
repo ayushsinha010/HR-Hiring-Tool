@@ -1,0 +1,761 @@
+{% extends "base.html" %}
+{% block title %}{{ position.title }} — Resumes{% endblock %}
+{% block content %}
+<div class="two-col" data-position-id="{{ position.id }}">
+  <aside class="col-left">
+    <div class="col-header">
+      {% if origin == 'tracker' %}
+      <a href="{{ url_for('tracker', position_id=position.id) }}" class="back-link">&larr; Back to Tracker</a>
+      {% else %}
+      <a href="{{ url_for('home', position=position.id) }}" class="back-link">&larr; {{ position.title }}</a>
+      {% endif %}
+      <div class="quick-nav">
+        <a href="{{ url_for('home') }}">Home</a>
+        <a href="{{ url_for('tracker', position_id=position.id) }}">Tracker</a>
+        <a href="{{ url_for('assessment_page', position_id=position.id) }}">Assessment</a>
+      </div>
+      <div class="col-header-row">
+        <h2>Candidates</h2>
+      </div>
+      <div class="col-header-actions">
+        <button id="score-selected-btn" class="btn btn-secondary btn-small" disabled title="Score Selected">Score</button>
+        <button id="email-selected-btn" class="btn btn-primary btn-small" disabled title="Send JD Email">Email</button>
+        <button id="delete-selected-btn" class="btn btn-danger btn-small" disabled title="Delete Selected">Delete</button>
+      </div>
+      <div id="score-progress" class="score-progress" hidden>
+        <div class="score-progress-bar"><div id="score-progress-fill" class="score-progress-fill"></div></div>
+        <span id="score-progress-text"></span>
+      </div>
+      {% if added is not none %}
+      <div class="alert alert-success add-resumes-alert">Added {{ added }} resume{{ '' if added == 1 else 's' }}.</div>
+      {% endif %}
+      {% if imported is not none %}
+      <div class="alert alert-success add-resumes-alert">
+        Imported {{ imported }} candidate{{ '' if imported == 1 else 's' }}.{% if import_skipped_dupe %} Skipped {{ import_skipped_dupe }} already on this position.{% endif %}{% if import_skipped_no_name %} Skipped {{ import_skipped_no_name }} row{{ '' if import_skipped_no_name == 1 else 's' }} with no name.{% endif %}
+      </div>
+      {% endif %}
+      {% if import_error %}<div class="alert alert-error add-resumes-alert">{{ import_error }}</div>{% endif %}
+      <div class="add-resumes-form" style="display:flex; gap:8px;">
+        <form method="post" action="{{ url_for('browse_and_link_folder', position_id=position.id) }}">
+          <button type="submit" class="btn btn-secondary btn-small">+ Add Resumes</button>
+        </form>
+        <button type="button" id="import-candidates-open" class="btn btn-secondary btn-small">Import from Spreadsheet</button>
+      </div>
+      {% if position.watch_folder %}
+      <div class="linked-folder-status">
+        <span class="field-hint-small"><code>{{ position.watch_folder }}</code></span>
+        <form method="post" action="{{ url_for('unlink_watch_folder', position_id=position.id) }}">
+          <button type="submit" class="unlink-x" title="Stop watching this folder"
+                  onclick="return confirm('Stop watching this folder? Candidates already added stay.');">&times;</button>
+        </form>
+      </div>
+      {% endif %}
+      <form method="get" id="search-form" class="search-form">
+        <input type="hidden" name="from" value="{{ origin or '' }}">
+        <input type="text" id="candidate-search" name="q" class="candidate-search" placeholder="Search name, phone, or email..." value="{{ query or '' }}">
+      </form>
+      <label class="select-all-row">
+        <input type="checkbox" id="select-all-checkbox"> Select all ({{ candidates|length }})
+      </label>
+      <div class="bucket-filter-row" id="bucket-filter-row">
+        <button type="button" class="bucket-filter-chip active" data-filter-bucket="">All ({{ candidates|length }})</button>
+        {% for b, label in (('green', 'Strong'), ('yellow', 'Borderline'), ('red', 'Weak'), ('unscored', 'Unscored')) %}
+        {% set b_count = candidates | selectattr('bucket', 'equalto', b) | list | length %}
+        {% if b_count %}
+        <button type="button" class="bucket-filter-chip bucket-filter-chip-{{ b }}" data-filter-bucket="{{ b }}">{{ label }} ({{ b_count }})</button>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% set bucket_titles = {'green': 'Strong fit (score above 6)', 'yellow': 'Borderline fit (score 4-6)', 'red': 'Weak fit (score below 4)', 'unscored': 'Not yet scored'} %}
+    <div class="candidate-list" id="candidate-list">
+      {% for c in candidates %}
+      <a href="{{ url_for('resumes', position_id=position.id, candidate=c.id, q=query or '', from=origin or '') }}"
+         class="candidate-row bucket-{{ c.bucket }} {{ 'active' if selected and selected.id == c.id else '' }}"
+         data-candidate-id="{{ c.id }}" data-score="{{ c.score if c.score is not none else '' }}" data-added="{{ c.created_at or '' }}">
+        <input type="checkbox" class="candidate-select" data-candidate-id="{{ c.id }}" onclick="event.stopPropagation()">
+        <span class="candidate-avatar" title="{{ bucket_titles[c.bucket] }}">{{ (c.candidate_name or c.resume_filename)[0]|upper }}</span>
+        <span class="candidate-name" style="{{ score_highlight_style(c.score) }}">{{ c.candidate_name or c.resume_filename }}</span>
+        {% if c.source_missing %}<span class="missing-badge" title="Source file no longer found in the linked folder">&#9888;</span>{% endif %}
+        {% if c.imported_no_resume %}<span class="imported-badge" title="No resume file — added via spreadsheet import">&#128203;</span>{% endif %}
+        {% if c.score is not none %}
+        <span class="candidate-score candidate-score-btn" role="button" tabindex="0" data-score-breakdown="{{ c.id }}" title="Click for score breakdown">{{ '%.1f'|format(c.score) }}</span>
+        {% else %}
+        <span class="candidate-score candidate-score-none" title="This resume has not been scored yet">Not scored yet</span>
+        {% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <section class="col-right">
+    {% if selected %}
+    <div class="resume-panel">
+      {% if selected.source_missing %}
+      <div class="alert alert-error missing-file-banner">
+        This candidate's source file is no longer in the linked folder - it may have been moved, renamed, or deleted. It's kept here for now, not removed automatically.
+        <form method="post" action="{{ url_for('stop_tracking_candidate', candidate_id=selected.id) }}" style="display:inline">
+          <button type="submit" class="btn btn-secondary btn-small">Keep Anyway (stop tracking)</button>
+        </form>
+      </div>
+      {% endif %}
+      <div class="resume-panel-header">
+        <h1>{{ selected.candidate_name or selected.resume_filename }}</h1>
+        <div class="jd-actions">
+          <div class="jd-actions-group">
+            <a href="{{ url_for('offer_letter_route', candidate_id=selected.id, from=origin, q=query) }}" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
+              Offer Letter
+            </a>
+            <button class="btn btn-primary" id="detail-btn" data-candidate-id="{{ selected.id }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              View in Detail
+            </button>
+          </div>
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('update_candidate_email_route', candidate_id=selected.id) }}" class="candidate-email-form">
+        <input type="hidden" name="from" value="{{ origin or '' }}">
+        <input type="hidden" name="q" value="{{ query or '' }}">
+        <label class="field-label" for="candidate_email">Email</label>
+        <input type="text" id="candidate_email" name="email" value="{{ selected.email or '' }}" placeholder="No email found - enter one">
+        <button type="submit" class="btn btn-secondary btn-small">Save</button>
+      </form>
+
+      {# ---- Hiring timeline: where this CV is now, buffer time, interviews and panel feedback ---- #}
+      {% set tlc = selected_timeline %}
+      {% if tlc %}
+      <div class="candidate-notes" id="timeline">
+        <h3>Timeline and Buffer Time</h3>
+        <p class="field-hint-small">Calendar days. A dash means that date was never recorded. Targets can be changed in Settings.</p>
+        <div class="cand-timeline-grid">
+          <div class="cand-timeline-cell"><span class="k">CV fed in on</span><span class="v">{{ tlc.cv_fed_on|short_date }}</span></div>
+          <div class="cand-timeline-cell"><span class="k">Days since CV</span><span class="v">{{ fmt_days(tlc.days_since_cv) }}</span></div>
+          <div class="cand-timeline-cell"><span class="k">Current stage</span><span class="v">{{ tlc.stage_label }}</span></div>
+          <div class="cand-timeline-cell"><span class="k">Entered stage on</span><span class="v">{{ tlc.entered_stage_on|short_date }}{% if tlc.entered_is_estimate %} <span class="est-mark" title="No stage-change date was recorded for this candidate, so the CV-added date is used.">est.</span>{% endif %}</span></div>
+          <div class="cand-timeline-cell {{ 'is-over' if tlc.days_in_stage is not none and tlc.days_in_stage > timeline_targets.stage_age_days and tlc.phase not in ('Joined', 'Rejected', 'On Hold') else '' }}"><span class="k">Days in stage</span><span class="v">{{ fmt_days(tlc.days_in_stage) }}</span></div>
+          <div class="cand-timeline-cell"><span class="k">CV to interview scheduled</span><span class="v">{{ fmt_days(tlc.days_cv_to_schedule) }}</span></div>
+          <div class="cand-timeline-cell"><span class="k">Interview to feedback</span><span class="v">{{ fmt_days(tlc.days_interview_to_feedback) }}</span></div>
+          <div class="cand-timeline-cell"><span class="k">Feedback to decision</span><span class="v">{{ fmt_days(tlc.days_feedback_to_decision) }}</span></div>
+        </div>
+        {% if tlc.over_target %}
+        <div class="alert alert-error">Over target: {{ tlc.over_target_reasons | join('; ') }}</div>
+        {% endif %}
+        <details>
+          <summary class="field-hint-small" style="cursor:pointer;">Stage history ({{ tlc.history|length }})</summary>
+          <ul class="stage-history-list">
+            {% for h in tlc.history %}
+            <li><strong>{{ h.stage_label }}</strong> &mdash; {{ h.entered_at|stored_dt }}
+              {% if h.source == 'backfilled' %}<span class="est-mark" title="{{ 'Backfilled at upgrade: no stage date existed, the CV-added date stands in.' if h.estimate else 'Backfilled at upgrade from an existing recorded timestamp (' ~ (h.basis or 'n/a') ~ ').' }}">{{ 'backfilled, est.' if h.estimate else 'backfilled' }}</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+      </div>
+      {% endif %}
+
+      <div class="candidate-notes" id="interviews">
+        <h3>Interviews and Panel Feedback</h3>
+        <p class="field-hint-small">Schedule an interview here (or with the envelope button in the tracker) and the candidate's stage moves to Scheduled. After the interview, save each panel member's feedback.</p>
+        {% if timeline_saved == 'scheduled' %}<div class="alert alert-success">Interview scheduled and recorded.</div>{% endif %}
+        {% if timeline_saved == 'feedback' %}<div class="alert alert-success">Panel feedback saved.</div>{% endif %}
+        {% if timeline_error %}<div class="alert alert-error">{{ timeline_error }}</div>{% endif %}
+
+        {% for iv in selected_interviews %}
+        <div class="interview-card {{ '' if iv.is_current else 'is-superseded' }}">
+          <div class="interview-card-head">
+            <span class="interview-card-title">{{ iv.round_label }}{% if not iv.is_current %} <span class="field-hint-small">(rescheduled &mdash; replaced by a later booking)</span>{% endif %}</span>
+            <span class="field-hint-small">Scheduled on {{ iv.created_at|stored_dt }}</span>
+          </div>
+          <div class="interview-card-meta">
+            <strong>When:</strong> {{ iv.scheduled_for|when_text(iv.scheduled_for_text) }}
+            &middot; <strong>Panel:</strong> {{ iv.interviewers or 'not recorded' }}
+            &middot; <strong>Mode:</strong> {{ iv.mode or 'not recorded' }}{% if iv.link %} (<a href="{{ iv.link }}" target="_blank" rel="noopener">link</a>){% endif %}
+            &middot; <strong>Recorded:</strong> {{ 'Yes, to be recorded' if iv.record_flag else 'No' }}
+          </div>
+          {% if iv.feedback %}
+          <div class="ratings-table-wrap" style="margin-top:4px;">
+            <table class="ratings-table">
+              <thead><tr><th>Panel member</th><th>Recommendation</th><th>Rating</th><th>Saved</th><th>Comments</th></tr></thead>
+              <tbody>
+                {% for f in iv.feedback %}
+                <tr>
+                  <td>{{ f.panelist }}</td>
+                  <td><span class="rec-chip rec-{{ f.recommendation|lower }}">{{ f.recommendation }}</span></td>
+                  <td>{{ (f.rating ~ '/5') if f.rating else '-' }}</td>
+                  <td>{{ f.created_at|stored_dt }}</td>
+                  <td class="ratings-remarks">{{ f.comments or '' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="field-hint-small" style="margin:4px 0 0;">No panel feedback saved yet.</p>
+          {% endif %}
+          {% if iv.is_current %}
+          <form method="post" action="{{ url_for('save_interview_feedback', candidate_id=selected.id, interview_id=iv.id) }}" class="feedback-form">
+            <input type="hidden" name="from" value="{{ origin or '' }}">
+            <input type="hidden" name="q" value="{{ query or '' }}">
+            <input type="text" name="panelist" placeholder="Panel member" required list="panel-names-{{ iv.id }}">
+            <datalist id="panel-names-{{ iv.id }}">{% for nm in (iv.interviewers or '').split(',') if nm.strip() %}<option value="{{ nm.strip() }}">{% endfor %}</datalist>
+            <select name="recommendation" required>
+              <option value="">Recommendation...</option>
+              {% for rec in feedback_recommendations %}<option value="{{ rec }}">{{ rec }}</option>{% endfor %}
+            </select>
+            <select name="rating" title="Optional rating">
+              <option value="">Rating (opt.)</option>
+              {% for n in (5, 4, 3, 2, 1) %}<option value="{{ n }}">{{ n }}/5</option>{% endfor %}
+            </select>
+            <textarea name="comments" rows="2" placeholder="Comments from this panel member..."></textarea>
+            <button type="submit" class="btn btn-secondary btn-small">Save feedback</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        {% for iv in (tlc.interviews if tlc else []) if not iv.id %}
+        <p class="field-hint-small" style="margin-top:10px;">
+          <strong>{{ iv.round_label }}</strong> is ticked in the tracker but no interview details were recorded for it, so feedback cannot be attached yet &mdash; record it below with the real date.
+        </p>
+        {% endfor %}
+
+        <h4 style="margin:16px 0 0; font-size:13px; color:var(--purple);">Schedule an interview</h4>
+        <form method="post" action="{{ url_for('schedule_candidate_interview', candidate_id=selected.id) }}" class="schedule-form">
+          <input type="hidden" name="from" value="{{ origin or '' }}">
+          <input type="hidden" name="q" value="{{ query or '' }}">
+          <div>
+            <label class="field-label" for="sch_round">Round</label>
+            <select id="sch_round" name="round_key" required>
+              {% for key, label in interview_round_options %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="sch_date">Date</label>
+            <input type="date" id="sch_date" name="interview_date" required>
+          </div>
+          <div>
+            <label class="field-label" for="sch_time">Time</label>
+            <input type="time" id="sch_time" name="interview_time" required>
+          </div>
+          <div>
+            <label class="field-label" for="sch_mode">Mode</label>
+            <select id="sch_mode" name="mode">
+              {% for m in interview_modes %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="full-row">
+            <label class="field-label" for="sch_panel">Panel members <span class="field-hint-small">(comma separated)</span></label>
+            <input type="text" id="sch_panel" name="interviewers" placeholder="e.g. Priya (HR), Jordan (Tech lead)">
+          </div>
+          <div class="full-row">
+            <label class="field-label" for="sch_link">Meeting link or location</label>
+            <input type="text" id="sch_link" name="link" placeholder="https://teams.microsoft.com/... or room name">
+          </div>
+          <label class="checkbox-inline full-row"><input type="checkbox" name="record_flag" value="1"> This interview is to be recorded</label>
+          <div class="full-row"><button type="submit" class="btn btn-primary btn-small">Save interview</button></div>
+        </form>
+      </div>
+
+      {% if selected_notes %}
+      <div class="candidate-notes">
+        <h3>Notes {{ '(' ~ selected_notes|length ~ ')' }}</h3>
+        <div class="candidate-notes-list">
+          {% for n in selected_notes %}
+          <div class="candidate-note-row">
+            {{ n.text }}
+            <span class="field-hint-small">{{ n.created_at }}{% if n.noted_at %} &middot; parsed date: {{ n.noted_at }}{% endif %}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if interview_rounds %}
+      <div class="candidate-notes">
+        <h3>Interview Rounds</h3>
+        <p class="field-hint-small">This position's own rounds &mdash; mark each stage as the candidate moves through it.</p>
+        <div class="ratings-table-wrap">
+          <table class="ratings-table">
+            <thead>
+              <tr><th>Round</th><th>Interviewer</th><th>Scheduled</th><th>Attended</th><th>Cleared</th></tr>
+            </thead>
+            <tbody>
+              {% for round in interview_rounds %}
+              {% set st = candidate_round_statuses.get(round.id, {}) %}
+              <tr>
+                <td>{{ round.round_label }}</td>
+                <td>{{ round.assigned_display_name or round.assigned_username or 'Unassigned' }}</td>
+                {% for field in ('scheduled', 'attended', 'cleared') %}
+                <td>
+                  <form method="post" action="{{ url_for('toggle_candidate_round_status', candidate_id=selected.id, round_id=round.id) }}" style="display:inline;">
+                    <input type="hidden" name="field" value="{{ field }}">
+                    <input type="hidden" name="from" value="{{ origin or '' }}">
+                    <input type="hidden" name="q" value="{{ query or '' }}">
+                    <button type="submit" class="chip {{ 'chip-green' if st.get(field) else 'chip-grey' }}">{{ 'Yes' if st.get(field) else 'No' }}</button>
+                  </form>
+                  {% if field == 'scheduled' %}
+                  <button type="button" class="send-link-btn {{ 'send-link-btn-sent' if st.get('teams_link') else '' }}"
+                          data-candidate-id="{{ selected.id }}" data-candidate-name="{{ selected.candidate_name or selected.resume_filename }}"
+                          data-round-id="{{ round.id }}" data-round-label="{{ round.round_label }}"
+                          data-existing-link="{{ st.get('teams_link') or '' }}"
+                          title="{{ 'Resend/update interview link' if st.get('teams_link') else 'Send interview link' }}">
+                    &#9993;
+                  </button>
+                  {% endif %}
+                </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="candidate-notes">
+        <h3>Interview Ratings {{ '(' ~ selected_ratings|length ~ ')' if selected_ratings else '' }}</h3>
+        <p class="field-hint-small">Submitted by whoever is assigned to this position &mdash; visible here to HR/admin and to everyone else assigned.</p>
+        {% if rating_error %}<div class="alert alert-error">{{ rating_error }}</div>{% endif %}
+        <form method="post" action="{{ url_for('submit_candidate_rating', candidate_id=selected.id) }}" class="candidate-email-form" style="align-items:flex-start;">
+          <input type="hidden" name="from" value="{{ origin or '' }}">
+          <input type="hidden" name="q" value="{{ query or '' }}">
+          <div style="display:flex; flex-direction:column; gap:8px; width:100%;">
+            <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+              <input type="text" name="round_label" placeholder="Round, e.g. L2 Technical" style="flex:1; min-width:180px;">
+              <div class="star-rating-input">
+                <input type="radio" id="rating-star-5" name="rating" value="5" required><label for="rating-star-5" title="5 stars">&#9733;</label>
+                <input type="radio" id="rating-star-4" name="rating" value="4"><label for="rating-star-4" title="4 stars">&#9733;</label>
+                <input type="radio" id="rating-star-3" name="rating" value="3"><label for="rating-star-3" title="3 stars">&#9733;</label>
+                <input type="radio" id="rating-star-2" name="rating" value="2"><label for="rating-star-2" title="2 stars">&#9733;</label>
+                <input type="radio" id="rating-star-1" name="rating" value="1"><label for="rating-star-1" title="1 star">&#9733;</label>
+              </div>
+            </div>
+            <textarea name="remarks" rows="2" placeholder="Written remarks..." style="width:100%;"></textarea>
+            <button type="submit" class="btn btn-secondary btn-small" style="align-self:flex-start;">Submit Rating</button>
+          </div>
+        </form>
+        {% if selected_ratings %}
+        <div class="ratings-table-wrap">
+          <table class="ratings-table">
+            <thead>
+              <tr>
+                <th>Round</th>
+                <th>Rating</th>
+                <th>Rated By</th>
+                <th>Date</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in selected_ratings %}
+              <tr>
+                <td>{{ r.round_label or 'General' }}</td>
+                <td>
+                  <span class="star-display" title="{{ r.rating }}/5">
+                    {% for n in range(1, 6) %}<span class="{{ 'star-on' if n <= r.rating else 'star-off' }}">&#9733;</span>{% endfor %}
+                  </span>
+                </td>
+                <td>{{ r.display_name or r.username }}</td>
+                <td>{{ r.created_at }}</td>
+                <td class="ratings-remarks">{{ r.remarks or '' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="candidate-notes">
+        <h3>Interview Question Recommendations {{ '(' ~ selected_interview_recos|length ~ ')' if selected_interview_recos else '' }}</h3>
+        <p class="field-hint-small">Tailored to this candidate's resume against the JD &mdash; a pick-and-choose reference list, not a scored assessment.</p>
+        {% if reco_error %}<div class="alert alert-error">{{ reco_error }}</div>{% endif %}
+        <form method="post" action="{{ url_for('candidate_interview_questions_generate', candidate_id=selected.id) }}">
+          <input type="hidden" name="from" value="{{ origin or '' }}">
+          <input type="hidden" name="q" value="{{ query or '' }}">
+          <button type="submit" class="btn btn-secondary btn-small">Generate for this Candidate</button>
+        </form>
+        {% if selected_interview_recos %}
+        <div class="candidate-notes-list" style="margin-top:10px;">
+          {% for reco in selected_interview_recos %}
+          <div class="candidate-note-row">
+            <span class="field-hint-small">Generated {{ reco.created_at }} by {{ reco.display_name or reco.username or 'unknown' }}</span>
+            <p style="margin:6px 0 2px;"><strong>Interview questions</strong></p>
+            <ul style="margin:0 0 8px 18px; padding:0;">
+              {% for q in reco.questions if q.category == 'interview' %}<li>{{ q.text }}</li>{% endfor %}
+            </ul>
+            <p style="margin:0 0 2px;"><strong>Assessment questions</strong></p>
+            <ul style="margin:0 0 0 18px; padding:0;">
+              {% for q in reco.questions if q.category == 'assessment' %}<li>{{ q.text }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="candidate-notes">
+        <h3>Interview Scorecards {{ '(' ~ selected_scorecards|length ~ ')' if selected_scorecards else '' }}</h3>
+        {% if scorecard_error %}<div class="alert alert-error">{{ scorecard_error }}</div>{% endif %}
+        {% if not selected_notes %}
+        <p class="field-hint-small">No notes yet for this candidate &mdash; use Quick Capture (press Q) to log interview notes first, then generate a scorecard from them.</p>
+        {% else %}
+        <form method="post" action="{{ url_for('candidate_scorecard_generate', candidate_id=selected.id) }}">
+          <input type="hidden" name="from" value="{{ origin or '' }}">
+          <input type="hidden" name="q" value="{{ query or '' }}">
+          <button type="submit" class="btn btn-secondary btn-small">Generate Scorecard from Notes</button>
+        </form>
+        {% endif %}
+        {% if selected_scorecards %}
+        <div class="candidate-notes-list" style="margin-top:10px;">
+          {% for sc in selected_scorecards %}
+          <div class="candidate-note-row">
+            <div class="detail-score-row" style="margin-bottom:8px;">
+              <div class="detail-score bucket-{{ 'green' if sc.score > 6 else ('yellow' if sc.score >= 4 else 'red') }}" style="font-size:18px; padding:3px 10px;">{{ '%.1f'|format(sc.score) }}<span>/10</span></div>
+              <span class="field-hint-small">{{ sc.created_at }} &middot; from {{ sc.notes_count }} note{{ '' if sc.notes_count == 1 else 's' }}</span>
+            </div>
+            {{ sc.summary }}
+            {% if sc.positives %}<p class="field-hint-small"><strong>Positives:</strong> {{ sc.positives | join('; ') }}</p>{% endif %}
+            {% if sc.negatives %}<p class="field-hint-small"><strong>Concerns:</strong> {{ sc.negatives | join('; ') }}</p>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      {% set ext = selected.resume_filename.rsplit('.', 1)[-1].lower() %}
+      {% if selected.imported_no_resume %}
+      <div class="empty-state">
+        <p>No resume file was attached for this candidate — added via a spreadsheet import instead. The details captured at import time are shown below.</p>
+      </div>
+      {% if selected.resume_text %}<div class="resume-text">{{ selected.resume_text }}</div>{% endif %}
+      {% elif resume_file_missing %}
+      <div class="empty-state">
+        <p>The resume file for this candidate is missing from disk (it may have been moved or deleted outside the app). {% if selected.resume_text %}The extracted text below is still available.{% endif %}</p>
+      </div>
+      {% if selected.resume_text %}<div class="resume-text">{{ selected.resume_text }}</div>{% endif %}
+      {% elif ext == 'pdf' %}
+      <iframe class="resume-frame" src="{{ url_for('resume_file', candidate_id=selected.id) }}"></iframe>
+      {% else %}
+      <div class="resume-text">{{ selected.resume_text }}</div>
+      {% endif %}
+
+      <div class="interview-media-panel">
+        <h3>Interview Recording</h3>
+        <form method="post" action="{{ url_for('upload_interview_media', candidate_id=selected.id) }}" class="interview-media-form">
+          <input type="hidden" name="from" value="{{ origin or '' }}">
+          <input type="hidden" name="q" value="{{ query or '' }}">
+          <div class="interview-media-field">
+            <label class="field-label" for="interview_video_url">Video link</label>
+            {% if selected.interview_video_filename %}
+            <video controls class="interview-video-player" src="{{ url_for('interview_video_file', candidate_id=selected.id) }}"></video>
+            <p class="field-hint-small">Legacy upload: {{ selected.interview_video_filename }} — delete it below once you've switched to a link.</p>
+            {% endif %}
+            <input type="url" id="interview_video_url" name="interview_video_url"
+                   value="{{ selected.interview_video_url or '' }}"
+                   placeholder="Paste the Teams recording link here">
+            {% if selected.interview_video_url %}
+            <p class="field-hint-small"><a href="{{ selected.interview_video_url }}" target="_blank" rel="noopener">Open recording</a></p>
+            {% endif %}
+          </div>
+          <div class="interview-media-field">
+            <label class="field-label" for="interview_transcript_url">Transcript link</label>
+            {% if selected.interview_transcript_filename %}
+            <p class="field-hint-small">
+              Legacy upload: {{ selected.interview_transcript_filename }}
+              &mdash; <a href="{{ url_for('interview_transcript_file', candidate_id=selected.id) }}" target="_blank">view / download</a>
+            </p>
+            {% endif %}
+            <input type="url" id="interview_transcript_url" name="interview_transcript_url"
+                   value="{{ selected.interview_transcript_url or '' }}"
+                   placeholder="Paste the Teams transcript link here">
+            {% if selected.interview_transcript_url %}
+            <p class="field-hint-small"><a href="{{ selected.interview_transcript_url }}" target="_blank" rel="noopener">Open transcript</a></p>
+            {% endif %}
+          </div>
+          <p class="field-hint-small">Make sure the link's sharing permission allows the hiring team to view it.</p>
+          <div class="interview-media-actions">
+            <button type="submit" class="btn btn-secondary btn-small">Save Links</button>
+            {% if selected.interview_video_filename %}
+            <button type="submit" class="btn btn-danger btn-small"
+                    formaction="{{ url_for('delete_interview_video', candidate_id=selected.id) }}"
+                    onclick="return confirm('Delete the legacy interview video upload for this candidate? This cannot be undone.');">
+              Delete Legacy Video
+            </button>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+
+      <div class="interview-media-panel">
+        <h3>GoodFit Recording</h3>
+        <p class="field-hint-small">The AI interview video and transcript from GoodFit.</p>
+        <form method="post" action="{{ url_for('upload_goodfit_media', candidate_id=selected.id) }}" class="interview-media-form">
+          <input type="hidden" name="from" value="{{ origin or '' }}">
+          <input type="hidden" name="q" value="{{ query or '' }}">
+          <div class="interview-media-field">
+            <label class="field-label" for="goodfit_video_url">Video link</label>
+            {% if selected.goodfit_video_filename %}
+            <video controls class="interview-video-player" src="{{ url_for('goodfit_video_file', candidate_id=selected.id) }}"></video>
+            <p class="field-hint-small">Legacy upload: {{ selected.goodfit_video_filename }} — delete it below once you've switched to a link.</p>
+            {% endif %}
+            <input type="url" id="goodfit_video_url" name="goodfit_video_url"
+                   value="{{ selected.goodfit_video_url or '' }}"
+                   placeholder="Paste the GoodFit recording link here">
+            {% if selected.goodfit_video_url %}
+            <p class="field-hint-small"><a href="{{ selected.goodfit_video_url }}" target="_blank" rel="noopener">Open recording</a></p>
+            {% endif %}
+          </div>
+          <div class="interview-media-field">
+            <label class="field-label" for="goodfit_transcript_url">Transcript link</label>
+            {% if selected.goodfit_transcript_filename %}
+            <p class="field-hint-small">
+              Legacy upload: {{ selected.goodfit_transcript_filename }}
+              &mdash; <a href="{{ url_for('goodfit_transcript_file', candidate_id=selected.id) }}" target="_blank">view / download</a>
+            </p>
+            {% endif %}
+            <input type="url" id="goodfit_transcript_url" name="goodfit_transcript_url"
+                   value="{{ selected.goodfit_transcript_url or '' }}"
+                   placeholder="Paste the GoodFit transcript link here">
+            {% if selected.goodfit_transcript_url %}
+            <p class="field-hint-small"><a href="{{ selected.goodfit_transcript_url }}" target="_blank" rel="noopener">Open transcript</a></p>
+            {% endif %}
+          </div>
+          <p class="field-hint-small">Make sure the link's sharing permission allows the hiring team to view it.</p>
+          <div class="interview-media-actions">
+            <button type="submit" class="btn btn-secondary btn-small">Save Links</button>
+            {% if selected.goodfit_video_filename %}
+            <button type="submit" class="btn btn-danger btn-small"
+                    formaction="{{ url_for('delete_goodfit_video', candidate_id=selected.id) }}"
+                    onclick="return confirm('Delete the legacy GoodFit video upload for this candidate? This cannot be undone.');">
+              Delete Legacy Video
+            </button>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+
+      {% if onboarding_items is not none %}
+      <div class="onboarding-panel">
+        <h3>Onboarding Checklist</h3>
+        <ul class="onboarding-list" data-candidate-id="{{ selected.id }}">
+          {% for item in onboarding_items %}
+          <li class="onboarding-item {{ 'onboarding-item-done' if item.completed else '' }}">
+            <label>
+              <input type="checkbox" class="onboarding-checkbox" data-item-id="{{ item.id }}" {{ 'checked' if item.completed else '' }}>
+              {{ item.label }}
+            </label>
+            {% if item.completed and item.completed_at %}<span class="field-hint-small">done {{ item.completed_at }}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <p>Select a candidate from the list on the left to view their resume.</p>
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+<div id="detail-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <button id="detail-close" class="modal-close">&times;</button>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<div id="import-candidates-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <button id="import-candidates-close" class="modal-close">&times;</button>
+    <h2>Import from Spreadsheet</h2>
+    <p class="field-hint-small">Adds candidates with no resume file required, on top of the normal upload flow above — for a list of names/contact details from a job fair, referral list, or another source. Existing candidates on this position are matched and skipped (by email first, then by exact name) so re-importing the same file is safe.</p>
+    <form method="post" action="{{ url_for('import_candidates_route', position_id=position.id) }}" enctype="multipart/form-data">
+      <label class="field-label" for="import_file">.csv or .xlsx file</label>
+      <input type="file" id="import_file" name="import_file" accept=".csv,.xlsx" required>
+      <p class="field-hint-small">First row must be column headers. Recognized columns (any order, case-insensitive): Name (required), Email, Phone, Experience, Current Company, Current Role, Location. Other columns are ignored.</p>
+      <button type="submit" class="btn btn-primary btn-small" style="margin-top:10px;">Import</button>
+    </form>
+  </div>
+</div>
+
+<div id="teams-link-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <button id="teams-link-close" class="modal-close">&times;</button>
+    <h2 id="teams-link-title">Send Interview Link</h2>
+    <form id="teams-link-form">
+      <label class="field-label" for="teams_link_date">Interview date</label>
+      <input type="text" id="teams_link_date" placeholder="e.g. 20-08-2026">
+      <label class="field-label" for="teams_link_time">Interview time</label>
+      <input type="text" id="teams_link_time" placeholder="e.g. 3:00 PM IST">
+      <label class="field-label" for="teams_link_input">Teams meeting link</label>
+      <input type="text" id="teams_link_input" placeholder="https://teams.microsoft.com/l/meetup-join/...">
+      <label class="field-label" for="teams_link_note">Personal note <span class="field-hint-small">(optional, added on top of the template below)</span></label>
+      <textarea id="teams_link_note" rows="2" placeholder="e.g. a specific reason this candidate stood out"></textarea>
+      <label class="checkbox-inline" style="margin-top:10px;"><input type="checkbox" id="teams_link_record"> This interview is to be recorded</label>
+      <button type="button" class="btn btn-secondary btn-small" id="teams-link-draft-btn">Draft with AI</button>
+      <span id="teams-link-draft-status" class="field-hint-small"></span>
+      <label class="field-label">Preview <span class="field-hint-small">(the Interview Invite email template)</span></label>
+      <pre id="teams-link-preview" class="email-preview"></pre>
+      <p id="teams-link-status" class="field-hint-small"></p>
+      <button type="submit" class="btn btn-primary btn-block">Send</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='score_breakdown.js') }}"></script>
+{% if interview_rounds %}
+<script>
+  (function () {
+    const POSITION_TITLE = {{ position.title | tojson }};
+    const teamsModal = document.getElementById('teams-link-modal');
+    const teamsForm = document.getElementById('teams-link-form');
+    const teamsTitle = document.getElementById('teams-link-title');
+    const teamsDateInput = document.getElementById('teams_link_date');
+    const teamsTimeInput = document.getElementById('teams_link_time');
+    const teamsLinkInput = document.getElementById('teams_link_input');
+    const teamsNoteInput = document.getElementById('teams_link_note');
+    const teamsDraftBtn = document.getElementById('teams-link-draft-btn');
+    const teamsDraftStatus = document.getElementById('teams-link-draft-status');
+    const teamsPreview = document.getElementById('teams-link-preview');
+    const teamsStatus = document.getElementById('teams-link-status');
+    const teamsClose = document.getElementById('teams-link-close');
+    let activeSendBtn = null;
+    let activeCandidateName = '';
+    let activeRoundLabel = '';
+
+    if (teamsDraftBtn) {
+      teamsDraftBtn.addEventListener('click', () => {
+        teamsDraftBtn.disabled = true;
+        teamsDraftStatus.textContent = 'Drafting...';
+        fetch('/ai/draft-email-note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            candidate_name: activeCandidateName, role_name: POSITION_TITLE,
+            context: `${activeRoundLabel} interview invite`,
+          }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            teamsDraftBtn.disabled = false;
+            if (data.error) { teamsDraftStatus.textContent = data.error; return; }
+            teamsNoteInput.value = data.note;
+            teamsDraftStatus.textContent = 'Drafted — review and edit before sending.';
+            updateTeamsPreview();
+          })
+          .catch(() => { teamsDraftBtn.disabled = false; teamsDraftStatus.textContent = 'Something went wrong drafting this.'; });
+      });
+    }
+
+    let previewToken = 0;
+    function updateTeamsPreview() {
+      const token = ++previewToken;
+      const params = new URLSearchParams({
+        kind: 'link_only', role_name: POSITION_TITLE, candidate_name: activeCandidateName,
+        date: teamsDateInput.value, time: teamsTimeInput.value, teams_link: teamsLinkInput.value,
+        custom_note: teamsNoteInput.value,
+      });
+      fetch(`/email-preview?${params}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (token !== previewToken) return;
+          teamsPreview.textContent = data.body;
+        })
+        .catch(() => {
+          if (token === previewToken) teamsPreview.textContent = 'Preview unavailable.';
+        });
+    }
+
+    document.querySelectorAll('.send-link-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeSendBtn = btn;
+        activeCandidateName = btn.dataset.candidateName;
+        activeRoundLabel = btn.dataset.roundLabel;
+        teamsTitle.textContent = `Send Interview Link — ${activeRoundLabel} — ${btn.dataset.candidateName}`;
+        teamsDateInput.value = '';
+        teamsTimeInput.value = '';
+        teamsLinkInput.value = btn.dataset.existingLink || '';
+        document.getElementById('teams_link_record').checked = false;
+        teamsNoteInput.value = '';
+        teamsDraftStatus.textContent = '';
+        teamsStatus.textContent = '';
+        updateTeamsPreview();
+        teamsModal.hidden = false;
+      });
+    });
+    [teamsDateInput, teamsTimeInput, teamsLinkInput, teamsNoteInput].forEach((el) => el.addEventListener('input', updateTeamsPreview));
+    if (teamsClose) teamsClose.addEventListener('click', () => { teamsModal.hidden = true; });
+    teamsModal.addEventListener('click', (e) => { if (e.target === teamsModal) teamsModal.hidden = true; });
+
+    teamsForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!activeSendBtn || !teamsDateInput.value.trim() || !teamsTimeInput.value.trim() || !teamsLinkInput.value.trim()) {
+        teamsStatus.textContent = 'Please fill in the date, time, and Teams link.';
+        return;
+      }
+      const candidateId = activeSendBtn.dataset.candidateId;
+      const roundId = activeSendBtn.dataset.roundId;
+      teamsStatus.textContent = 'Sending...';
+      fetch(`/candidates/${candidateId}/rounds/${roundId}/send-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: teamsDateInput.value.trim(),
+          time: teamsTimeInput.value.trim(),
+          teams_link: teamsLinkInput.value.trim(),
+          note: teamsNoteInput.value.trim(),
+          record: document.getElementById('teams_link_record').checked,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          teamsStatus.textContent = data.message;
+          if (data.ok) {
+            activeSendBtn.classList.add('send-link-btn-sent');
+            activeSendBtn.dataset.existingLink = teamsLinkInput.value.trim();
+            setTimeout(() => { teamsModal.hidden = true; }, 1200);
+          }
+        })
+        .catch(() => { teamsStatus.textContent = 'Something went wrong sending this.'; });
+    });
+  })();
+</script>
+{% endif %}
+<script>
+  (function () {
+    var modal = document.getElementById("import-candidates-modal");
+    var openBtn = document.getElementById("import-candidates-open");
+    var closeBtn = document.getElementById("import-candidates-close");
+    if (!modal || !openBtn) return;
+    openBtn.addEventListener("click", function () { modal.hidden = false; });
+    closeBtn.addEventListener("click", function () { modal.hidden = true; });
+    modal.addEventListener("click", function (e) { if (e.target === modal) modal.hidden = true; });
+  })();
+</script>
+<script>
+  // Fit-bucket filter chips - purely client-side (the list is already fully
+  // rendered), so switching buckets is instant with no extra request.
+  (function () {
+    var row = document.getElementById("bucket-filter-row");
+    if (!row) return;
+    var rows = document.querySelectorAll("#candidate-list .candidate-row");
+    row.addEventListener("click", function (e) {
+      var chip = e.target.closest(".bucket-filter-chip");
+      if (!chip) return;
+      row.querySelectorAll(".bucket-filter-chip").forEach(function (c) { c.classList.remove("active"); });
+      chip.classList.add("active");
+      var bucket = chip.dataset.filterBucket;
+      rows.forEach(function (r) {
+        r.hidden = !!bucket && !r.classList.contains("bucket-" + bucket);
+      });
+    });
+  })();
+</script>
+{% endblock %}

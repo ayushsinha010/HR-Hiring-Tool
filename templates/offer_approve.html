@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Offer Approval{% endblock %}
+{% block content %}
+<div class="public-offer-screen">
+  <div class="public-offer-card">
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="HR Hiring Agent" class="public-offer-logo">
+    {% if not candidate %}
+    <h1>Link not found</h1>
+    <p>This approval link is invalid, or the offer has since been withdrawn.</p>
+    {% else %}
+    <h1>Offer Approval</h1>
+    <p class="public-offer-subhead">
+      <strong>{{ candidate.candidate_name or candidate.resume_filename }}</strong> — {{ position.title }}
+    </p>
+
+    <table class="public-offer-details">
+      <tr><td>Designation</td><td>{{ candidate.offer_designation }}</td></tr>
+      <tr><td>CTC</td><td>{{ candidate.offer_ctc }}</td></tr>
+      <tr><td>Joining Date</td><td>{{ candidate.offer_joining_date }}</td></tr>
+    </table>
+
+    {% if candidate.offer_pdf_path %}
+    <iframe class="offer-pdf-frame" src="{{ url_for('offer_approve_pdf', token=candidate.offer_approval_token) }}"></iframe>
+    {% endif %}
+
+    {% if not handled %}
+    <form method="post" class="public-offer-actions" id="approve-form">
+      <button type="submit" name="action" value="approve" class="btn btn-primary">Approve</button>
+      <button type="button" class="btn btn-danger" id="reject-toggle">Not Approve</button>
+      <div id="reject-reason-box" hidden>
+        <label class="field-label" for="reason">Reason (visible to HR)</label>
+        <textarea id="reason" name="reason" rows="2"></textarea>
+        <button type="submit" name="action" value="reject" class="btn btn-danger">Submit Rejection</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="alert alert-{{ 'success' if candidate.offer_status == 'approved' else 'error' }}">
+      {% if candidate.offer_status == 'approved' %}
+      You approved this offer on {{ candidate.offer_approved_at }}. HR has been notified.
+      {% elif candidate.offer_status == 'needs_edit' %}
+      You sent this back to HR for edits{% if candidate.offer_rejection_reason %}: "{{ candidate.offer_rejection_reason }}"{% endif %}
+      {% else %}
+      This offer's status is: {{ offer_status_labels.get(candidate.offer_status, candidate.offer_status) }}
+      {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const rejectToggle = document.getElementById('reject-toggle');
+  const rejectBox = document.getElementById('reject-reason-box');
+  if (rejectToggle) {
+    rejectToggle.addEventListener('click', () => { rejectBox.hidden = !rejectBox.hidden; });
+  }
+</script>
+{% endblock %}

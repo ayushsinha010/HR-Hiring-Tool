@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Offer Letter — {{ candidate.candidate_name or candidate.resume_filename }}{% endblock %}
+{% block content %}
+<div class="offer-page">
+  <a href="{{ url_for('resumes', position_id=position.id, candidate=candidate.id, from=origin, q=query) }}" class="back-link">&larr; Back to resume</a>
+  <h1>Offer Letter — {{ candidate.candidate_name or candidate.resume_filename }}</h1>
+  <p class="offer-status-line">
+    Status: <span class="offer-status-badge offer-status-{{ candidate.offer_status or 'draft' }}">{{ offer_status_labels.get(candidate.offer_status, 'Not Started') }}</span>
+  </p>
+
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+  {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+  {% if offer_expired %}<div class="alert alert-error">This offer's validity date ({{ candidate.offer_expiry_date }}) has passed and the candidate still hasn't responded — worth a follow-up call before assuming it's still open.</div>{% endif %}
+
+  {% if candidate.offer_status == 'needs_edit' and candidate.offer_rejection_reason %}
+  <div class="alert alert-error">
+    <strong>Sent back for edits by the approver:</strong> {{ candidate.offer_rejection_reason }}
+  </div>
+  {% endif %}
+
+  <div class="offer-panels">
+    <form method="post" class="offer-details-form">
+      <h3>Offer Details</h3>
+      <label class="field-label" for="designation">Designation</label>
+      <input type="text" id="designation" name="designation" value="{{ candidate.offer_designation or '' }}" placeholder="e.g. Senior Python Developer">
+      <label class="field-label" for="ctc">Annual CTC</label>
+      <input type="text" id="ctc" name="ctc" value="{{ candidate.offer_ctc or '' }}" placeholder="e.g. INR 12,00,000">
+      <label class="field-label" for="joining_date">Proposed Joining Date</label>
+      <input type="date" id="joining_date" name="joining_date" value="{{ candidate.offer_joining_date or '' }}">
+      <label class="field-label" for="employment_type">Employment Type</label>
+      <input type="text" id="employment_type" name="employment_type" value="{{ candidate.offer_employment_type or '' }}" placeholder="e.g. Permanent, Contract, Intern">
+      <label class="field-label" for="expiry_date">Offer Valid Until <span class="field-hint-small">(optional — shown to the candidate and on the letter)</span></label>
+      <input type="date" id="expiry_date" name="expiry_date" value="{{ candidate.offer_expiry_date or '' }}">
+      <label class="field-label" for="notes">Additional Notes (appears in the letter)</label>
+      <textarea id="notes" name="notes" rows="3">{{ candidate.offer_notes or '' }}</textarea>
+      <label class="field-label" for="approver_email">Approver's Email (higher management)</label>
+      <input type="email" id="approver_email" name="approver_email" value="{{ candidate.offer_approver_email or '' }}" placeholder="approver@example.com">
+
+      <div class="offer-actions">
+        <button type="submit" name="action" value="save" class="btn btn-secondary">Save Details</button>
+        <button type="submit" name="action" value="send_for_approval" class="btn btn-primary">Send for Approval</button>
+      </div>
+      <p class="field-hint-small">Sending for approval generates the offer letter PDF and emails the approver a review link — no login needed on their end.</p>
+    </form>
+
+    <div class="offer-preview-panel">
+      <h3>Offer Letter Preview</h3>
+      {% if candidate.offer_pdf_path %}
+      <iframe class="offer-pdf-frame" src="{{ url_for('offer_approve_pdf', token=candidate.offer_approval_token) if candidate.offer_approval_token else '' }}"></iframe>
+      {% else %}
+      <p class="field-hint-small">Save the offer details, then click "Send for Approval" to generate the letter.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if candidate.offer_status == 'approved' %}
+  <form method="post" class="offer-send-candidate-form">
+    <h3>Send to Candidate</h3>
+    <p class="field-hint-small">Approved by higher management. This will email the offer letter to {{ candidate.email or 'the candidate (no email on file — add one from the resume page first)' }} along with an accept/decline link.</p>
+    <label class="field-label" for="candidate_message">Message to candidate</label>
+    <textarea id="candidate_message" name="candidate_message" rows="3">Congratulations! We're delighted to offer you this role. Please find your offer letter attached.</textarea>
+    <button type="submit" name="action" value="send_to_candidate" class="btn btn-primary" {{ 'disabled' if not candidate.email else '' }}>Send Offer to Candidate</button>
+  </form>
+  {% elif candidate.offer_status == 'sent' %}
+  <div class="alert alert-success">Sent to the candidate on {{ candidate.offer_sent_to_candidate_at }}. Awaiting their response.</div>
+  {% elif candidate.offer_status in ('accepted', 'declined') %}
+  <div class="alert alert-{{ 'success' if candidate.offer_status == 'accepted' else 'error' }}">
+    Candidate {{ candidate.offer_status }} the offer on {{ candidate.offer_responded_at }}.
+  </div>
+  {% endif %}
+
+  {% if offer_log %}
+  <div class="offer-log">
+    <h3>History</h3>
+    <ul>
+      {% for entry in offer_log %}
+      <li><span class="offer-log-time">{{ entry.created_at }}</span> — {{ entry.action.replace('_', ' ') }}{% if entry.actor %} by {{ entry.actor }}{% endif %}{% if entry.note %}: "{{ entry.note }}"{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

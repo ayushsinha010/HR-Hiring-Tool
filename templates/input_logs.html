@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Input Logs — HR Hiring Agent{% endblock %}
+{% block content %}
+<div class="settings-page">
+  <a href="{{ url_for('home') }}" class="back-link">&larr; Back to Dashboard</a>
+  <h1 class="dashboard-title">Input Logs</h1>
+  <p class="dashboard-subtitle" style="margin-bottom:20px;">Everything you've typed into Quick Capture (press Q anywhere) and what it did, newest first.</p>
+
+  {% if not days %}
+  <div class="settings-card">
+    <div class="empty-state">Nothing captured yet &mdash; press <strong>Q</strong> anywhere to try Quick Capture.</div>
+  </div>
+  {% endif %}
+
+  {% for day in days %}
+  <div class="settings-card">
+    <h2>{{ day.label }}</h2>
+    <div class="candidate-notes-list">
+      {% for log in day.logs %}
+      <div class="candidate-note-row input-log-row {{ 'input-log-row-error' if log.status == 'error' else '' }}">
+        <div class="input-log-row-head">
+          <span class="field-hint-small">{{ log.time_display }}</span>
+          {% if log.matched_label %}
+            {% if log.candidate_id and log.candidate_position_id %}
+            <a href="{{ url_for('resumes', position_id=log.candidate_position_id, candidate=log.candidate_id) }}" class="chip chip-grey" title="View candidate">{{ log.matched_label }}</a>
+            {% else %}
+            <span class="chip chip-grey">{{ log.matched_label }}</span>
+            {% endif %}
+          {% endif %}
+          {% if log.status == 'error' %}<span class="chip chip-red">Error</span>{% endif %}
+        </div>
+        <div class="input-log-raw">&ldquo;{{ log.raw_text }}&rdquo;</div>
+        <p class="field-hint-small input-log-summary">{{ log.action_summary }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

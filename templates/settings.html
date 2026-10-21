@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Settings — HR Hiring Agent{% endblock %}
+{% block content %}
+<div class="settings-page">
+  <a href="{{ url_for('home') }}" class="back-link">&larr; Back to Dashboard</a>
+  <h1 class="dashboard-title">Settings</h1>
+  <p class="dashboard-subtitle" style="margin-bottom:20px;">Manage AI scoring, templates, your mailbox, and account details.</p>
+
+  {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+  {% if current_user.is_admin %}
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Team & Access</h2>
+    <p class="form-subheading">Create user accounts, and assign/reassign who can see and rate candidates for each position (from that position's own page). Every change is logged in the Audit Log.</p>
+    <div style="display:flex; gap:10px;">
+      <a href="{{ url_for('users_view') }}" class="btn btn-secondary btn-small">Manage Users</a>
+      <a href="{{ url_for('audit_log_view') }}" class="btn btn-secondary btn-small">View Audit Log</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m6.8 6.8-2.8-2.8"/><path d="M2 12h4"/><path d="m6.8 17.2-2.8 2.8"/><path d="M12 18v4"/><path d="m17.2 17.2 2.8 2.8"/><path d="M18 12h4"/><path d="m17.2 6.8 2.8-2.8"/></svg>AI Scoring (LLM)</h2>
+    <p class="form-subheading">Used to compare resumes against the job description and produce scores.</p>
+    <form method="post">
+      <input type="hidden" name="form_name" value="llm">
+
+      <label class="field-label" for="llm_provider">Provider</label>
+      <select id="llm_provider" name="llm_provider">
+        <option value="openrouter" {{ 'selected' if llm_settings.llm_provider == 'openrouter' else '' }}>OpenRouter</option>
+        <option value="anthropic" {{ 'selected' if llm_settings.llm_provider == 'anthropic' else '' }}>Anthropic (direct)</option>
+      </select>
+
+      <label class="field-label" for="llm_model">Model</label>
+      <input type="text" id="llm_model" name="llm_model" value="{{ llm_settings.llm_model }}" placeholder="e.g. openai/gpt-5.4">
+
+      <label class="field-label" for="llm_api_key">API Key</label>
+      <input type="password" id="llm_api_key" name="llm_api_key" placeholder="{{ 'Already set - leave blank to keep it' if llm_settings.llm_api_key else 'Not set' }}">
+      <p class="field-hint">OpenRouter calls go to {{ llm_settings.llm_base_url }}.</p>
+
+      <button type="submit" class="btn btn-primary">Save LLM Settings</button>
+    </form>
+  </div>
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>Report Template</h2>
+    <p class="form-subheading">PDF reports use the optional Word-based report template (cover page, brand fonts, branded charts) when a template renderer is configured (REPORT_TEMPLATE_DIR) and Open Sans is installed system-wide on this machine.</p>
+    {% if report_template_installed %}
+    <div class="alert alert-success" style="margin-bottom:0;">Report template installed &mdash; reports use it automatically.</div>
+    {% else %}
+    <p class="field-hint">Not installed yet &mdash; reports currently use a simpler fallback style. Clicking install will trigger a Windows permission prompt on <strong>this computer</strong> that you'll need to approve.</p>
+    <button type="button" id="install-template-btn" class="btn btn-primary">Install Report Template</button>
+    <p id="install-template-status" class="field-hint-small"></p>
+    {% endif %}
+  </div>
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/></svg>Offer Letter Template</h2>
+    <p class="form-subheading">Upload your actual offer letter (.docx, with your letterhead) so generated offer PDFs use it instead of a generic placeholder.</p>
+    {% if has_custom_offer_template %}
+    <div class="alert alert-success" style="margin-bottom:12px;">Custom template uploaded &mdash; offer letters use it automatically.</div>
+    {% else %}
+    <p class="field-hint">No template uploaded yet &mdash; offer letters currently use a generic placeholder.</p>
+    {% endif %}
+
+    <p class="field-hint-small">In your Word document, type these tokens exactly (with double curly braces) wherever that value should appear:</p>
+    <ul class="offer-token-list">
+      {% for token, description in offer_template_tokens %}
+      <li><code>{{ token }}</code> &mdash; {{ description }}</li>
+      {% endfor %}
+    </ul>
+
+    <form method="post" action="{{ url_for('upload_offer_template') }}" enctype="multipart/form-data" class="offer-template-upload-form">
+      <input type="file" name="offer_template_file" accept=".docx" required>
+      <button type="submit" class="btn btn-primary">Upload Template</button>
+    </form>
+    {% if has_custom_offer_template %}
+    <form method="post" action="{{ url_for('delete_offer_template') }}" onsubmit="return confirm('Remove the uploaded template? Offer letters will go back to the generic placeholder.');">
+      <button type="submit" class="btn btn-danger btn-small">Remove Template</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>Email Account</h2>
+    <p class="form-subheading">Connect your own Outlook mailbox so JD and interview-link emails go out from you, not a shared address.</p>
+    <form method="post">
+      <input type="hidden" name="form_name" value="email_account">
+      <label class="field-label" for="email_address">Your email address</label>
+      <input type="text" id="email_address" name="email_address" value="{{ user.email_address or '' }}" placeholder="you@example.com">
+      <label class="field-label" for="email_app_password">App password</label>
+      <input type="password" id="email_app_password" name="email_app_password" placeholder="{{ 'Already set - leave blank to keep it' if user.email_app_password else 'Not set' }}">
+      <p class="field-hint">Outlook/Microsoft 365 needs an <em>app password</em>, not your normal login password, if your account has MFA on. Ask IT if SMTP is blocked tenant-wide.</p>
+      <label class="field-label" for="email_smtp_host">SMTP host</label>
+      <input type="text" id="email_smtp_host" name="email_smtp_host" value="{{ user.email_smtp_host or 'smtp.office365.com' }}">
+      <label class="field-label" for="email_smtp_port">SMTP port</label>
+      <input type="text" id="email_smtp_port" name="email_smtp_port" value="{{ user.email_smtp_port or 587 }}">
+      <button type="submit" class="btn btn-primary">Save Email Account</button>
+    </form>
+  </div>
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>Email Templates</h2>
+    <p class="form-subheading">
+      No upload step &mdash; the portal reads each email's wording straight from its .docx file every time it
+      sends, so editing that file <em>is</em> how you change the template. HR still fills in the details (name,
+      date, time, Teams link) as a form when composing &mdash; only the fixed wording around them lives in the file.
+    </p>
+    <p class="field-hint-small">Folder: <code>{{ email_template_dir }}</code></p>
+
+    <p class="field-hint-small">In each Word document, type these tokens exactly (with double curly braces) wherever that value should appear:</p>
+    <ul class="offer-token-list">
+      {% for token, description in email_template_tokens %}
+      <li><code>{{ token }}</code> &mdash; {{ description }}</li>
+      {% endfor %}
+    </ul>
+
+    {% for kind in email_template_kinds %}
+    <div class="email-template-slot">
+      <h3>{{ email_template_labels[kind] }}</h3>
+      <p class="field-hint-small"><code>{{ email_template_filenames[kind] }}</code></p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="settings-card" id="timeline-targets">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Hiring Timeline Targets</h2>
+    <p class="form-subheading">The dashboard's &ldquo;Hiring Timeline and Buffer Time&rdquo; section flags anything that has been waiting longer than these targets, in calendar days. Defaults: {{ timeline_target_defaults.stage_age_days }} / {{ timeline_target_defaults.feedback_pending_days }} / {{ timeline_target_defaults.decision_pending_days }} / {{ timeline_target_defaults.position_open_days }} days.</p>
+    <form method="post">
+      <input type="hidden" name="form_name" value="timeline_targets">
+      <div class="timeline-targets-grid">
+        {% for name, label in timeline_target_labels.items() %}
+        <label for="target_{{ name }}">{{ label }}</label>
+        <input type="number" id="target_{{ name }}" name="target_{{ name }}" min="1" max="365" step="1" required value="{{ timeline_targets[name] }}">
+        {% endfor %}
+      </div>
+      <button type="submit" class="btn btn-primary">Save Targets</button>
+    </form>
+  </div>
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Onboarding Checklist</h2>
+    <p class="form-subheading">One item per line. Applied to a candidate's checklist the first time it's opened after they're marked "Joined" &mdash; later edits here don't change checklists already created.</p>
+    <form method="post">
+      <input type="hidden" name="form_name" value="onboarding_checklist">
+      <textarea id="onboarding_items" name="onboarding_items" rows="6">{{ onboarding_items|join('\n') }}</textarea>
+      <button type="submit" class="btn btn-primary">Save Checklist Template</button>
+    </form>
+  </div>
+
+  <div class="settings-card" id="profile">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profile</h2>
+    <form method="post">
+      <input type="hidden" name="form_name" value="profile">
+      <label class="field-label">Username</label>
+      <input type="text" value="{{ user.username }}" disabled>
+      <label class="field-label" for="display_name">Display Name</label>
+      <input type="text" id="display_name" name="display_name" value="{{ user.display_name or '' }}" placeholder="e.g. Priya (HR)">
+      <label class="field-label" for="designation">Designation</label>
+      <input type="text" id="designation" name="designation" value="{{ user.designation or '' }}" placeholder="e.g. Technical Interviewer">
+      <label class="field-label" for="department">Department</label>
+      <input type="text" id="department" name="department" value="{{ user.department or '' }}" placeholder="e.g. Engineering">
+      <button type="submit" class="btn btn-primary">Save Profile</button>
+    </form>
+  </div>
+
+  <div class="settings-card">
+    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Change Password</h2>
+    <form method="post">
+      <input type="hidden" name="form_name" value="password">
+      <label class="field-label" for="current_password">Current Password</label>
+      <input type="password" id="current_password" name="current_password" required>
+      <label class="field-label" for="new_password">New Password</label>
+      <input type="password" id="new_password" name="new_password" required minlength="6">
+      <label class="field-label" for="confirm_password">Confirm New Password</label>
+      <input type="password" id="confirm_password" name="confirm_password" required minlength="6">
+      <button type="submit" class="btn btn-primary">Change Password</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const installBtn = document.getElementById('install-template-btn');
+  const installStatus = document.getElementById('install-template-status');
+  if (installBtn) {
+    installBtn.addEventListener('click', () => {
+      installBtn.disabled = true;
+      installStatus.textContent = 'Waiting for the Windows permission prompt to be approved...';
+      fetch('/settings/install-report-template', { method: 'POST' })
+        .then((r) => r.json())
+        .then((data) => {
+          installStatus.textContent = data.message;
+          if (data.ok) {
+            setTimeout(() => window.location.reload(), 1200);
+          } else {
+            installBtn.disabled = false;
+          }
+        })
+        .catch(() => {
+          installBtn.disabled = false;
+          installStatus.textContent = 'Something went wrong starting the install.';
+        });
+    });
+  }
+</script>
+{% endblock %}
