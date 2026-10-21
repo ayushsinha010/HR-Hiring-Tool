@@ -1,0 +1,13 @@
+flask
+python-docx
+openpyxl
+pymupdf
+anthropic
+httpx
+waitress
+reportlab
+docxtpl
+rapidfuzz
+parsedatetime
+# Optional - only for the template-based reports in branded_report.py (see README):
+# matplotlib

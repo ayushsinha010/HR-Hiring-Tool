@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Local configuration and secrets
+.env
+users.json
+
+# Runtime data: database, uploaded JDs/resumes/recordings, generated key, backups
+data/*
+!data/.gitkeep
+backups/
+
+# Logs and editor/OS files
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local databases anywhere
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
